@@ -1,42 +1,24 @@
 {
   "compilerOptions": {
-    "jsx": "preserve",
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "jsxImportSource": "@emotion/react",
     "allowJs": false,
     "strict": true,
-    "jsxImportSource": "@emotion/react",
+    "skipLibCheck": true,
+    "noEmit": true,
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "baseUrl": ".",
+    "paths": {
+      "@lidojs/design-editor": ["src/vendor/design-editor"]
+    },
     "types": ["vite/client"]
   },
-  "files": [],
-  "include": [],
-  "exclude": ["dist", "node_modules"],
-  "references": [
-    {
-      "path": "../../libs/draw"
-    },
-    {
-      "path": "../../libs/design-editor"
-    },
-    {
-      "path": "../../libs/design-utils"
-    },
-    {
-      "path": "../../libs/text-editor"
-    },
-    {
-      "path": "../../libs/design-screen"
-    },
-    {
-      "path": "../../libs/design-layers"
-    },
-    {
-      "path": "../../libs/design-core"
-    },
-    {
-      "path": "../../libs/color-picker"
-    },
-    {
-      "path": "./tsconfig.app.json"
-    }
-  ],
-  "extends": "../../tsconfig.base.json"
+  "include": ["src", "vite.config.ts"],
+  "exclude": ["dist", "node_modules"]
 }

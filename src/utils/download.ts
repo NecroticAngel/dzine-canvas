@@ -7,3 +7,18 @@ export const downloadObjectAsJson = (exportName: string, data: unknown) => {
   downloadAnchorNode.click();
   downloadAnchorNode.remove();
 };
+
+export const downloadDataUrl = (exportName: string, dataUrl: string) => {
+  const link = document.createElement('a');
+  link.href = dataUrl;
+  link.download = exportName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+};
+
+export const downloadBlob = (exportName: string, blob: Blob) => {
+  const url = URL.createObjectURL(blob);
+  downloadDataUrl(exportName, url);
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+};

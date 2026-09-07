@@ -30,7 +30,7 @@ export const DesignPage = () => {
         }[];
       }>(
         `https://www.googleapis.com/webfonts/v1/webfonts?key=${process.env.FONT_API_KEY}`,
-      );
+      ).catch(() => ({ data: { items: [] } }));
       const items = data.data.items;
       const res: FontData[] = items.map((i) => {
         const fonts = Object.entries(i.files).reduce(

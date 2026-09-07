@@ -1,28 +1,40 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
-import { analyzer } from 'vite-bundle-analyzer';
 import EnvironmentPlugin from 'vite-plugin-environment';
 
-const isProd = process.env.NODE_ENV === 'production';
-const plugins = [react(), EnvironmentPlugin(['API_ENDPOINT', 'FONT_API_KEY'])];
-if (isProd) {
-  plugins.push(
-    analyzer({
-      analyzerMode: 'static',
-      openAnalyzer: false,
-    }),
-  );
-}
+const rootDir = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
-  plugins,
+  resolve: {
+    alias: {
+      '@lidojs/design-editor': path.resolve(
+        rootDir,
+        'src/vendor/design-editor',
+      ),
+    },
+  },
+  plugins: [
+    react({
+      jsxImportSource: '@emotion/react',
+      babel: {
+        plugins: ['@emotion/babel-plugin'],
+      },
+    }),
+    EnvironmentPlugin(
+      {
+        API_ENDPOINT: '',
+        FONT_API_KEY: '',
+      },
+      { defineOn: 'process.env' },
+    ),
+  ],
   server: {
     port: 4200,
+    host: true,
   },
   build: {
-    sourcemap: true, // Generate source maps for debugging
-    rollupOptions: {
-      treeshake: true,
-    },
+    sourcemap: true,
   },
 });

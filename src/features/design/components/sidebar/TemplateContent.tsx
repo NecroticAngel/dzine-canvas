@@ -7,6 +7,8 @@ import { isMobile } from 'react-device-detect';
 import { useAsync } from 'react-use';
 
 interface Template {
+  id?: string;
+  name?: string;
   img: string;
   elements: SerializedPage;
 }
@@ -14,13 +16,28 @@ interface Template {
 export const TemplateContent: FC<{ onClose: () => void }> = ({ onClose }) => {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const { actions, activePage } = useEditor((state) => ({
     activePage: state.activePage,
   }));
   useAsync(async () => {
-    const response = await axios.get<Template[]>('/templates');
-    setTemplates(response.data);
-    setIsLoading(false);
+    try {
+      const response = await axios.get<Template[]>('/templates');
+      const list = Array.isArray(response.data) ? response.data : [];
+      setTemplates(list);
+      setLoadError(
+        list.length === 0
+          ? 'No templates yet. Start the API (`npm run api`) and add JSON files under api/data/templates.'
+          : null,
+      );
+    } catch {
+      setTemplates([]);
+      setLoadError(
+        'Could not reach the templates API. Run `npm run api` (or `npm run dev:all`).',
+      );
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
   const addPage = async (data: SerializedPage) => {
     actions.setPage(activePage, data);
@@ -89,13 +106,38 @@ export const TemplateContent: FC<{ onClose: () => void }> = ({ onClose }) => {
           }}
         >
           {isLoading && <div>Loading...</div>}
+          {!isLoading && loadError && (
+            <div
+              css={{
+                gridColumn: '1 / -1',
+                color: '#5E6278',
+                fontSize: 13,
+                lineHeight: 1.5,
+                padding: 8,
+              }}
+            >
+              {loadError}
+            </div>
+          )}
           {templates.map((item, index) => (
             <div
-              key={index}
-              css={{ cursor: 'pointer' }}
+              key={item.name ? `${item.name}-${index}` : index}
+              css={{
+                cursor: 'pointer',
+                borderRadius: 8,
+                overflow: 'hidden',
+                border: '1px solid rgba(57,76,96,.12)',
+                background: '#fff',
+              }}
               onClick={() => addPage(item.elements)}
+              title={item.name}
             >
-              <img alt={item.img} loading="lazy" src={item.img} />
+              <img
+                alt={item.name || 'Template'}
+                loading="lazy"
+                src={item.img}
+                css={{ display: 'block', width: '100%', height: 'auto' }}
+              />
             </div>
           ))}
         </div>

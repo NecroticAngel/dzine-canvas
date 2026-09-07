@@ -1,9 +1,13 @@
 {
-  "name": "@lidojs/react",
+  "name": "lidojs-canva-clone",
   "version": "2.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "vite",
+    "api": "node api/server.js",
+    "dev:all": "concurrently -k -n api,web -c cyan,magenta \"npm run api\" \"npm run dev\"",
+    "seed:templates": "node scripts/seed-templates.mjs",
     "build": "vite build",
     "serve": "vite preview"
   },
@@ -11,29 +15,50 @@
     "@duyank/icons": "^0.1.2",
     "@emotion/react": "11.14.0",
     "@emotion/styled": "11.14.0",
-    "@lidojs/color-picker": "^2.0.0",
+    "@lidojs/color-picker": "^1.9.2",
     "@lidojs/design-core": "^2.0.0",
-    "@lidojs/design-editor": "^2.0.0",
-    "@lidojs/design-layers": "^2.0.0",
-    "@lidojs/design-screen": "^2.0.0",
+    "@lidojs/design-editor": "^1.2.2",
+    "@lidojs/design-layers": "^1.4.3",
+    "@lidojs/design-screen": "^1.3.0",
     "@lidojs/design-utils": "^2.0.0",
-    "@lidojs/draw": "^2.0.0",
+    "@lidojs/draw": "^1.9.2",
     "@lidojs/text-editor": "^2.0.0",
     "@mui/material": "^6.4.5",
     "axios": "^1.7.9",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "html-to-image": "^1.11.13",
+    "jspdf": "^4.2.1",
     "lodash": "^4.17.21",
     "react": "^18.3.1",
     "react-device-detect": "^2.2.3",
-    "react-dom": "catalog:",
+    "react-dom": "^18.3.1",
     "react-responsive-masonry": "^2.7.1",
     "react-use": "^17.6.0",
     "uuid": "^11.0.5"
   },
   "devDependencies": {
+    "@emotion/babel-plugin": "^11.13.5",
+    "@esbuild/win32-x64": "^0.25.12",
+    "@rollup/rollup-win32-x64-msvc": "^4.63.1",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/lodash": "^4.17.15",
     "@types/react": "^18.3.1",
     "@types/react-dom": "^18.3.5",
+    "@types/uuid": "^10.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^10.0.5",
     "prop-types": "^15.8.1",
+    "typescript": "~5.7.3",
+    "vite": "^6.1.0",
     "vite-bundle-analyzer": "^0.17.0",
     "vite-plugin-environment": "^1.1.3"
+  },
+  "allowScripts": {
+    "esbuild@0.25.12": true
+  },
+  "optionalDependencies": {
+    "@rollup/rollup-win32-x64-msvc": "^4.63.1"
   }
 }
