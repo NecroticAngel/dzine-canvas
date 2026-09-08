@@ -1094,7 +1094,7 @@ export const TableContent: FC<{ onClose: () => void }> = ({ onClose }) => {
           onDragStart={(e) => handleDrag(e)}
         >
           <div>
-            <img src="/assets/images/table/table-1.png" alt="Table" />
+            <img src="assets/images/table/table-1.png" alt="Table" />
           </div>
         </div>
       </div>

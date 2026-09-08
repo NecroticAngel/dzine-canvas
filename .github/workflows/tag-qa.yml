@@ -1,0 +1,27 @@
+name: Tag QA release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+      - name: Create QA tag
+        id: release
+        run: scripts/next-release-tag.sh qa
+    outputs:
+      release-tag: ${{ steps.release.outputs.tag }}
+
+  publish:
+    needs: tag
+    uses: ./.github/workflows/publish.yml
+    with:
+      release-tag: ${{ needs.tag.outputs.release-tag }}

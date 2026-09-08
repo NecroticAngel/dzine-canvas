@@ -1,0 +1,23 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "dzine-canvas.fullname" . }}
+  annotations:
+    traefik.ingress.kubernetes.io/router.middlewares: {{ .Values.ingress.middleware | quote }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  tls:
+    - hosts:
+        - {{ .Values.host }}
+      secretName: {{ .Values.ingress.tlsSecretName }}
+  rules:
+    - host: {{ .Values.host }}
+      http:
+        paths:
+          - path: {{ .Values.basePath }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "dzine-canvas.fullname" . }}
+                port:
+                  name: http

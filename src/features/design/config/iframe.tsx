@@ -35,6 +35,6 @@ export const iframeList: IframeItem[] = [
         },
       },
     ],
-    img: '/assets/images/weather/1.png',
+    img: 'assets/images/weather/1.png',
   },
 ];

@@ -1,4 +1,5 @@
 import type {
+  ArrowType,
   SerializedLayer,
   SerializedLayerTree,
   SerializedLayers,
@@ -37,6 +38,8 @@ export type DeepPartial<T> = {
 
 export type LineLayerProps = {
   style?: string;
+  arrowStart?: ArrowType;
+  arrowEnd?: ArrowType;
   boxSize?: { width?: number; height?: number };
   color?: string;
   position?: { x: number; y: number };
@@ -958,6 +961,8 @@ export const Editor = ({
       addLineLayer: ({ props }) =>
         addSingle('LineLayer', {
           style: 'solid',
+          arrowStart: 'none',
+          arrowEnd: 'none',
           color: 'rgb(94, 98, 120)',
           boxSize: { width: 400, height: 4 },
           position: { x: 80, y: 80 },
@@ -1078,6 +1083,19 @@ export const Editor = ({
       registerTextInput: (el) => {
         activeTextareaRef.current = el;
       },
+      deleteLayers: (ids = selectedLayerIds) => {
+        if (!ids.length) return;
+        flushTextDraft();
+        const next = clonePages(pagesRef.current);
+        const layers = next[activePageRef.current]?.layers;
+        if (!layers) return;
+        for (const id of ids) removeLayerTree(layers, id);
+        commit(next);
+        setSelectedLayerIds([]);
+        setEditingLayerId(null);
+        textDraftRef.current = null;
+        activeTextareaRef.current = null;
+      },
       saveDesign: () => {
         persistCurrent();
       },
@@ -1190,6 +1208,7 @@ export const Editor = ({
     patchLayerText,
     persistCurrent,
     refreshDesignList,
+    selectedLayerIds,
   ]);
 
   const query = useMemo<EditorQuery>(
