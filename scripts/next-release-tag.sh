@@ -30,4 +30,7 @@ fi
 tag="${prefix}${version}"
 git tag "$tag"
 git push origin "$tag"
+if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+  echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+fi
 echo "Created ${tag}"

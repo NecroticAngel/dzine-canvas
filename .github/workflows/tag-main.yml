@@ -5,6 +5,7 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
 jobs:
   tag:
@@ -16,7 +17,16 @@ jobs:
           fetch-depth: 0
           ref: master
       - name: Create production tag
+        id: release
         run: |
           git config user.name github-actions
           git config user.email github-actions@github.com
           scripts/next-release-tag.sh v
+    outputs:
+      release-tag: ${{ steps.release.outputs.tag }}
+
+  publish:
+    needs: tag
+    uses: ./.github/workflows/publish.yml
+    with:
+      release-tag: ${{ needs.tag.outputs.release-tag }}

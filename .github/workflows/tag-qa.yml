@@ -5,6 +5,7 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
 jobs:
   tag:
@@ -14,4 +15,13 @@ jobs:
         with:
           fetch-depth: 0
       - name: Create QA tag
+        id: release
         run: scripts/next-release-tag.sh qa
+    outputs:
+      release-tag: ${{ steps.release.outputs.tag }}
+
+  publish:
+    needs: tag
+    uses: ./.github/workflows/publish.yml
+    with:
+      release-tag: ${{ needs.tag.outputs.release-tag }}
