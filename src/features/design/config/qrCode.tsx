@@ -38,7 +38,7 @@ export const qrCodeList: QrCodeItem[] = [
         },
       },
     ],
-    img: '/assets/images/qr-code/1.png',
+    img: 'assets/images/qr-code/1.png',
   },
   {
     elements: [
@@ -192,7 +192,7 @@ export const qrCodeList: QrCodeItem[] = [
         },
       },
     ],
-    img: '/assets/images/qr-code/2.png',
+    img: 'assets/images/qr-code/2.png',
   },
   {
     elements: [
@@ -346,6 +346,6 @@ export const qrCodeList: QrCodeItem[] = [
         },
       },
     ],
-    img: '/assets/images/qr-code/3.png',
+    img: 'assets/images/qr-code/3.png',
   },
 ];

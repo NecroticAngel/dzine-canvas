@@ -8,6 +8,26 @@ This code will show you how to integrate LidoJS into an application to make an o
 
 Explore the platform at [https://lidojs.com](https://lidojs.com) or meet us at [https://discord.gg/mBj7fqKpEM](https://discord.gg/mBj7fqKpEM).
 
+## Development
+
+The repository uses [mise](https://mise.jdx.dev/) to install the same Node.js and
+[Just](https://github.com/casey/just) versions on macOS, Linux, and Windows.
+After installing mise for your platform, run:
+
+```sh
+mise trust
+mise install
+just setup
+just dev
+```
+
+Copy `.env.example` to `.env` before starting development when the web app
+should use the local template API. Add a Google Web Fonts API key only when
+remote font loading is required; never commit the resulting `.env` file.
+
+`just` lists all available project commands. The main validation command is
+`just check`, which runs the TypeScript check followed by the production build.
+
 ## **Overview**
 
 LidoJS makes designing simple and fun, offering a variety of tools to help designers, marketers, and content creators reach their goals. From creating slides to making graphics, LidoJS makes the whole process easier.
@@ -56,7 +76,6 @@ Start designing with LidoJS and experience the future of creative possibilities.
 This source code is developed entirely by our team from scratch. We have not used any third-party resources that require licensing. 
 Our product is designed to assist users in developing design applications efficiently. However, we do not guarantee any specific outcomes or take responsibility for how this software is used.  
 Use this code at your own risk. We are not liable for any damages or issues arising from its use.
-
 ## NecroZine local setup
 
 - Editor: http://127.0.0.1:4200/
@@ -68,5 +87,3 @@ npm run dev:all
 ```
 
 **How to add templates:** see [api/README.md](./api/README.md).
-
-

@@ -7,6 +7,8 @@ import EnvironmentPlugin from 'vite-plugin-environment';
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
+  // Relative build assets let the same image run below any client path.
+  base: './',
   resolve: {
     alias: {
       '@lidojs/design-editor': path.resolve(

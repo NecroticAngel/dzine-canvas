@@ -1,0 +1,6 @@
+apiVersion: v2
+name: dzine-canvas
+description: Path-scoped D-Zine canvas deployment
+type: application
+version: 0.1.1
+appVersion: "0.1.1"

@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 26.8.1
+          cache: npm
+      # color-picker/draw have not published v2 peer metadata, while the app
+      # uses the design-core v2 API. Keep the existing compatibility contract.
+      - run: npm ci --legacy-peer-deps
+      - run: npx tsc --noEmit
+      - run: npm run build
+      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
+      - run: helm lint infra/helm/dzine-canvas
+      - run: helm template demo infra/helm/dzine-canvas >/tmp/dzine-canvas.yaml
+      - run: docker build --tag dzine-canvas:ci .

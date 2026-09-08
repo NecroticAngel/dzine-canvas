@@ -1,0 +1,24 @@
+client: demo
+host: canvas.d-zine.org.za
+basePath: /demo
+
+image:
+  repository: ghcr.io/necroticangel/dzine-canvas
+  tag: 0.1.0
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+existingClaim: dzine-canvas-demo-data
+
+ingress:
+  className: traefik
+  tlsSecretName: canvas-dzine-org-za-tls
+  middleware: dzine-canvas-demo-oidc@kubernetescrd
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: "2"
+    memory: 1Gi
