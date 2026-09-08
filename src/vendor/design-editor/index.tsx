@@ -100,6 +100,10 @@ type EditorActions = {
   setSidebar: (name?: string) => void;
   selectLayers: (ids: string[]) => void;
   setEditingLayer: (id: string | null) => void;
+  goToPage: (index: number) => void;
+  addPage: () => void;
+  duplicatePage: (index?: number) => void;
+  deletePage: (index?: number) => void;
   updateLayerBox: (
     layerId: string,
     box: { position: Point; boxSize: PageSize },
@@ -165,6 +169,24 @@ const bootstrapEditor = () => {
     designs: listDesignSummaries(),
   };
 };
+
+const createBlankPage = (): SerializedPage => ({
+  layers: {
+    ROOT: {
+      type: { resolvedName: 'RootLayer' },
+      props: {
+        boxSize: { width: 1640, height: 924 },
+        position: { x: 0, y: 0 },
+        rotate: 0,
+        color: 'rgb(255, 255, 255)',
+        image: null,
+      },
+      locked: false,
+      child: [],
+      parent: null,
+    },
+  },
+});
 
 const pageSizeOf = (page: SerializedPage | undefined): PageSize => {
   const box = page?.layers?.ROOT?.props?.boxSize as PageSize | undefined;
@@ -1008,6 +1030,49 @@ export const Editor = ({
         }
         setEditingLayerId(id);
       },
+      goToPage: (index) => {
+        const total = pagesRef.current.length;
+        if (total === 0) return;
+        const nextIndex = Math.max(0, Math.min(total - 1, index));
+        if (nextIndex === activePageRef.current) return;
+        flushTextDraft();
+        setSelectedLayerIds([]);
+        setEditingLayerId(null);
+        textDraftRef.current = null;
+        activeTextareaRef.current = null;
+        setActivePage(nextIndex);
+      },
+      addPage: () => {
+        flushTextDraft();
+        const next = [...clonePages(pagesRef.current), createBlankPage()];
+        commit(next);
+        setSelectedLayerIds([]);
+        setEditingLayerId(null);
+        setActivePage(next.length - 1);
+      },
+      duplicatePage: (index) => {
+        flushTextDraft();
+        const sourceIndex = index ?? activePageRef.current;
+        const source = pagesRef.current[sourceIndex];
+        if (!source) return;
+        const next = clonePages(pagesRef.current);
+        next.splice(sourceIndex + 1, 0, clonePages([source])[0]);
+        commit(next);
+        setSelectedLayerIds([]);
+        setEditingLayerId(null);
+        setActivePage(sourceIndex + 1);
+      },
+      deletePage: (index) => {
+        if (pagesRef.current.length <= 1) return;
+        flushTextDraft();
+        const removeIndex = index ?? activePageRef.current;
+        const next = clonePages(pagesRef.current);
+        next.splice(removeIndex, 1);
+        commit(next);
+        setSelectedLayerIds([]);
+        setEditingLayerId(null);
+        setActivePage(Math.min(removeIndex, next.length - 1));
+      },
       updateLayerBox: patchLayerLive,
       updateLayerText: patchLayerText,
       registerTextInput: (el) => {
@@ -1296,31 +1361,25 @@ export const PageControl = () => {
         color: 'var(--app-text)',
       }}
     >
-      <button
-        type="button"
-        onClick={() => {
-          const blank: SerializedPage = {
-            layers: {
-              ROOT: {
-                type: { resolvedName: 'RootLayer' },
-                props: {
-                  boxSize: { width: 1640, height: 924 },
-                  position: { x: 0, y: 0 },
-                  rotate: 0,
-                  color: 'rgb(255, 255, 255)',
-                  image: null,
-                },
-                locked: false,
-                child: [],
-                parent: null,
-              },
-            },
-          };
-          actions.setData([...pages, blank]);
-        }}
-      >
-        Add Page
-      </button>
+      <div css={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <button type="button" onClick={() => actions.addPage()}>
+          Add Page
+        </button>
+        <button
+          type="button"
+          disabled={activePage <= 0}
+          onClick={() => actions.goToPage(activePage - 1)}
+        >
+          Prev
+        </button>
+        <button
+          type="button"
+          disabled={activePage >= pages.length - 1}
+          onClick={() => actions.goToPage(activePage + 1)}
+        >
+          Next
+        </button>
+      </div>
       <span>
         Page {activePage + 1} / {pages.length || 1}
       </span>

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { EditorContent } from './editor-content';
 import { EditorHeader } from './editor-header';
 import { LayerSettings } from './layer-settings';
+import { PagesPanel } from './pages-panel';
 import { PreviewModal } from './preview';
 import { Sidebar } from './sidebar';
 
@@ -141,6 +142,7 @@ export const LidoJSEditor = ({
               <PageControl />
             </div>
           </div>
+          <PagesPanel />
         </div>
       </div>
     </Editor>

@@ -127,6 +127,13 @@ const EditorHeaderForwardRef: ForwardRefRenderFunction<
   };
 
   const handleSave = () => {
+    const currentName = currentDesign?.name ?? 'Untitled';
+    const nextName = window.prompt('Save design as', currentName);
+    if (nextName === null) return;
+    const trimmed = nextName.trim() || currentName;
+    if (currentDesign && trimmed !== currentName) {
+      actions.renameDesign(currentDesign.id, trimmed);
+    }
     actions.saveDesign();
     setSaveState('saved');
     window.setTimeout(() => setSaveState('idle'), 1500);
