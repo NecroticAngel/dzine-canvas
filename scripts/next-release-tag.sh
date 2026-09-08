@@ -23,7 +23,7 @@ if [[ "$prefix" == "v" ]]; then
   if ! git diff --quiet -- infra/helm/dzine-canvas/Chart.yaml; then
     git add infra/helm/dzine-canvas/Chart.yaml
     git commit -m "chore(release): sync helm chart ${version}"
-    git push origin HEAD:th/main
+    git push origin "HEAD:${GITHUB_REF_NAME:-main}"
   fi
 fi
 
