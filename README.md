@@ -21,6 +21,10 @@ just setup
 just dev
 ```
 
+Copy `.env.example` to `.env` before starting development when the web app
+should use the local template API. Add a Google Web Fonts API key only when
+remote font loading is required; never commit the resulting `.env` file.
+
 `just` lists all available project commands. The main validation command is
 `just check`, which runs the TypeScript check followed by the production build.
 
@@ -72,4 +76,3 @@ Start designing with LidoJS and experience the future of creative possibilities.
 This source code is developed entirely by our team from scratch. We have not used any third-party resources that require licensing. 
 Our product is designed to assist users in developing design applications efficiently. However, we do not guarantee any specific outcomes or take responsibility for how this software is used.  
 Use this code at your own risk. We are not liable for any damages or issues arising from its use.
-
