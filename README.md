@@ -28,6 +28,18 @@ remote font loading is required; never commit the resulting `.env` file.
 `just` lists all available project commands. The main validation command is
 `just check`, which runs the TypeScript check followed by the production build.
 
+Or without mise/just:
+
+```bash
+npm install --legacy-peer-deps
+npm run dev:all
+```
+
+- Editor: http://127.0.0.1:4200/
+- Storage API: http://127.0.0.1:4201/api/
+
+**Templates + storage env vars (user spaces):** see [api/README.md](./api/README.md) and `.env.example`.
+
 ## **Overview**
 
 LidoJS makes designing simple and fun, offering a variety of tools to help designers, marketers, and content creators reach their goals. From creating slides to making graphics, LidoJS makes the whole process easier.
@@ -76,14 +88,3 @@ Start designing with LidoJS and experience the future of creative possibilities.
 This source code is developed entirely by our team from scratch. We have not used any third-party resources that require licensing. 
 Our product is designed to assist users in developing design applications efficiently. However, we do not guarantee any specific outcomes or take responsibility for how this software is used.  
 Use this code at your own risk. We are not liable for any damages or issues arising from its use.
-## NecroZine local setup
-
-- Editor: http://127.0.0.1:4200/
-- Templates API: http://127.0.0.1:4201/
-
-```bash
-npm install --legacy-peer-deps
-npm run dev:all
-```
-
-**How to add templates:** see [api/README.md](./api/README.md).

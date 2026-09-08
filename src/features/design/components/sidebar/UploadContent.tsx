@@ -1,8 +1,17 @@
 import XIcon from '@duyank/icons/regular/X';
 import { useEditor } from '@lidojs/design-editor';
 import { fetchSvgContent } from '@lidojs/design-utils';
+import axios from 'axios';
 import { type ChangeEvent, type FC, useRef, useState } from 'react';
 import { isMobile } from 'react-device-detect';
+import { useAsync } from 'react-use';
+
+interface UploadItem {
+  id?: string;
+  name?: string;
+  url: string;
+  type: 'svg' | 'image';
+}
 
 interface UploadContentProps {
   visibility: boolean;
@@ -16,9 +25,29 @@ export const UploadContent: FC<UploadContentProps> = ({
   const inputFileRef = useRef<HTMLInputElement>(null);
   const { actions } = useEditor();
 
-  const [images, setImages] = useState<
-    { url: string; type: 'svg' | 'image' }[]
-  >([]);
+  const [images, setImages] = useState<UploadItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+
+  useAsync(async () => {
+    if (!visibility) return;
+    setIsLoading(true);
+    try {
+      const response = await axios.get<UploadItem[]>('/uploads');
+      const list = Array.isArray(response.data) ? response.data : [];
+      setImages(list);
+      setLoadError(null);
+    } catch {
+      setImages([]);
+      setLoadError(
+        'Could not reach the uploads API. Run `npm run api` (or `npm run dev:all`).',
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }, [visibility]);
+
   const addImage = async (url: string) => {
     if (!window) return;
     const img = new Image();
@@ -48,23 +77,43 @@ export const UploadContent: FC<UploadContentProps> = ({
     }
   };
 
-  const handleUpload = (e: ChangeEvent<HTMLInputElement>) => {
+  const handleUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
+    e.target.value = '';
+    if (!file) return;
+
+    setIsUploading(true);
+    setLoadError(null);
+    try {
+      const body = new FormData();
+      body.append('file', file);
+      const response = await axios.post<UploadItem>('/uploads', body, {
+        timeout: 60_000,
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      setImages((prev) => [response.data, ...prev]);
+    } catch {
+      // Fallback: keep working offline with a data URL if API is down
       const reader = new FileReader();
       reader.onloadend = () => {
-        setImages((prevState) => {
-          return prevState.concat([
+        setImages((prev) =>
+          prev.concat([
             {
               url: reader.result as string,
               type: file.type === 'image/svg+xml' ? 'svg' : 'image',
             },
-          ]);
-        });
+          ]),
+        );
+        setLoadError(
+          'Upload API unreachable — file kept in this session only.',
+        );
       };
       reader.readAsDataURL(file);
+    } finally {
+      setIsUploading(false);
     }
   };
+
   return (
     <div
       css={{
@@ -119,12 +168,13 @@ export const UploadContent: FC<UploadContentProps> = ({
           borderRadius: 8,
           color: '#fff',
           padding: '8px 16px',
-          cursor: 'pointer',
+          cursor: isUploading ? 'wait' : 'pointer',
           textAlign: 'center',
+          opacity: isUploading ? 0.7 : 1,
         }}
-        onClick={() => inputFileRef.current?.click()}
+        onClick={() => !isUploading && inputFileRef.current?.click()}
       >
-        Upload
+        {isUploading ? 'Uploading…' : 'Upload'}
       </div>
       <input
         ref={inputFileRef}
@@ -133,6 +183,17 @@ export const UploadContent: FC<UploadContentProps> = ({
         type="file"
         onChange={handleUpload}
       />
+      {(isLoading || loadError) && (
+        <p
+          css={{
+            margin: '0 16px 8px',
+            fontSize: 12,
+            color: 'var(--app-text-muted, #888)',
+          }}
+        >
+          {isLoading ? 'Loading uploads…' : loadError}
+        </p>
+      )}
       <div css={{ padding: '16px' }}>
         <div
           css={{
@@ -145,7 +206,7 @@ export const UploadContent: FC<UploadContentProps> = ({
         >
           {images.map((item, idx) => (
             <div
-              key={idx}
+              key={item.id || item.url || idx}
               css={{ cursor: 'pointer', position: 'relative' }}
               onClick={() =>
                 item.type === 'image' ? addImage(item.url) : addSvg(item.url)
@@ -162,7 +223,7 @@ export const UploadContent: FC<UploadContentProps> = ({
                 }}
               >
                 <img
-                  alt={item.url}
+                  alt={item.name || item.url}
                   css={{ maxHeight: '100%' }}
                   loading="lazy"
                   src={item.url}
