@@ -119,7 +119,7 @@ export const VideoContent: FC<{ onClose: () => void }> = ({ onClose }) => {
           justifyContent: 'center',
           flexShrink: 0,
           height: 48,
-          borderBottom: '1px solid rgba(57,76,96,.15)',
+          borderBottom: '1px solid var(--app-border)',
           padding: '0 20px',
         }}
       >
@@ -127,7 +127,7 @@ export const VideoContent: FC<{ onClose: () => void }> = ({ onClose }) => {
           css={{
             lineHeight: '48px',
             fontWeight: 600,
-            color: '#181C32',
+            color: 'var(--app-text-strong)',
             flexGrow: 1,
           }}
         >

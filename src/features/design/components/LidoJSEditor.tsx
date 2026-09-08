@@ -77,6 +77,8 @@ export const LidoJSEditor = ({
           width: '100vw',
           height: '100vh',
           maxHeight: viewPortHeight ? `${viewPortHeight}px` : 'auto',
+          background: 'var(--app-workspace)',
+          color: 'var(--app-text)',
         }}
       >
         <EditorHeader openPreview={() => setOpenPreview(true)} />
@@ -87,7 +89,7 @@ export const LidoJSEditor = ({
             flexDirection: 'row',
             flex: 'auto',
             overflow: 'auto',
-            background: '#EBECF0',
+            background: 'var(--app-workspace)',
             '@media (max-width: 900px)': {
               flexDirection: 'column-reverse',
             },
@@ -97,7 +99,7 @@ export const LidoJSEditor = ({
             ref={leftSidebarRef}
             css={{
               display: 'flex',
-              background: 'white',
+              background: 'var(--app-sidebar)',
             }}
           >
             <Sidebar />
@@ -125,8 +127,9 @@ export const LidoJSEditor = ({
             <div
               css={{
                 height: 40,
-                background: '#fff',
-                borderTop: '1px solid rgba(57,76,96,.15)',
+                background: 'var(--app-panel)',
+                borderTop: '1px solid var(--app-border)',
+                color: 'var(--app-text)',
                 display: 'grid',
                 alignItems: 'center',
                 flexShrink: 0,

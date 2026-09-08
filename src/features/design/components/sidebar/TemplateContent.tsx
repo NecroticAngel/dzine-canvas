@@ -62,7 +62,7 @@ export const TemplateContent: FC<{ onClose: () => void }> = ({ onClose }) => {
           justifyContent: 'center',
           flexShrink: 0,
           height: 48,
-          borderBottom: '1px solid rgba(57,76,96,.15)',
+          borderBottom: '1px solid var(--app-border)',
           padding: '0 20px',
         }}
       >
@@ -70,7 +70,7 @@ export const TemplateContent: FC<{ onClose: () => void }> = ({ onClose }) => {
           css={{
             lineHeight: '48px',
             fontWeight: 600,
-            color: '#181C32',
+            color: 'var(--app-text-strong)',
             flexGrow: 1,
           }}
         >
@@ -110,7 +110,7 @@ export const TemplateContent: FC<{ onClose: () => void }> = ({ onClose }) => {
             <div
               css={{
                 gridColumn: '1 / -1',
-                color: '#5E6278',
+                color: 'var(--app-text-muted)',
                 fontSize: 13,
                 lineHeight: 1.5,
                 padding: 8,
@@ -126,8 +126,8 @@ export const TemplateContent: FC<{ onClose: () => void }> = ({ onClose }) => {
                 cursor: 'pointer',
                 borderRadius: 8,
                 overflow: 'hidden',
-                border: '1px solid rgba(57,76,96,.12)',
-                background: '#fff',
+                border: '1px solid var(--app-border)',
+                background: 'var(--app-surface)',
               }}
               onClick={() => addPage(item.elements)}
               title={item.name}

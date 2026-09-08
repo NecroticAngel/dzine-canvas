@@ -1,8 +1,16 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="utf-8" />
   <title>LidoJS Design Editor</title>
+  <script>
+    try {
+      var stored = localStorage.getItem('necrozine-ui-theme');
+      if (stored === 'light' || stored === 'dark') {
+        document.documentElement.setAttribute('data-theme', stored);
+      }
+    } catch (e) {}
+  </script>
   <meta
     content="Canva clone, design editor tool, graphic editor tool, image editor tool."
     name="description"

@@ -63,6 +63,24 @@ app.get('/health', (_req, res) => {
   res.json({ ok: true, templates: readTemplates().length });
 });
 
+app.get('/', (_req, res) => {
+  res.type('html').send(`<!doctype html>
+<html><head><meta charset="utf-8"><title>NecroZine Templates API</title>
+<style>
+  body{font-family:system-ui,sans-serif;max-width:40rem;margin:3rem auto;padding:0 1.25rem;line-height:1.5;color:#111}
+  code{background:#f3f4f6;padding:.1rem .35rem;border-radius:4px}
+  a{color:#2563eb}
+</style></head><body>
+  <h1>Templates API</h1>
+  <p>This is the backend on port <strong>4201</strong>, not the design editor.</p>
+  <p>Open the editor at <a href="http://127.0.0.1:4200/">http://127.0.0.1:4200/</a></p>
+  <ul>
+    <li><a href="/health"><code>GET /health</code></a></li>
+    <li><a href="/templates"><code>GET /templates</code></a></li>
+  </ul>
+</body></html>`);
+});
+
 const absoluteImg = (req, img) => {
   if (/^https?:\/\//i.test(img)) return img;
   const origin = `${req.protocol}://${req.get('host')}`;

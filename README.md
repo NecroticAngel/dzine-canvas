@@ -57,4 +57,16 @@ This source code is developed entirely by our team from scratch. We have not use
 Our product is designed to assist users in developing design applications efficiently. However, we do not guarantee any specific outcomes or take responsibility for how this software is used.  
 Use this code at your own risk. We are not liable for any damages or issues arising from its use.
 
+## NecroZine local setup
+
+- Editor: http://127.0.0.1:4200/
+- Templates API: http://127.0.0.1:4201/
+
+```bash
+npm install --legacy-peer-deps
+npm run dev:all
+```
+
+**How to add templates:** see [api/README.md](./api/README.md).
+
 

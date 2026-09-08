@@ -15,15 +15,16 @@ export const SidebarTab: FC<SidebarTabProps> = ({ tabs, active, onChange }) => {
   return (
     <div
       css={{
-        color: '#5E6278',
-        borderRight: '1px solid rgba(217, 219, 228, 0.6)',
+        color: 'var(--app-text)',
+        background: 'var(--app-tab-rail)',
+        borderRight: '1px solid var(--app-border-strong)',
         overflowY: 'auto',
         '@media (max-width: 900px)': {
           position: 'fixed',
           bottom: 0,
           left: 0,
           right: 0,
-          background: '#fff',
+          background: 'var(--app-panel)',
           display: 'flex',
           justifyContent: 'center',
         },
@@ -41,7 +42,7 @@ export const SidebarTab: FC<SidebarTabProps> = ({ tabs, active, onChange }) => {
         {activeIdx >= 0 && (
           <div
             css={{
-              background: '#fff',
+              background: 'var(--app-tab-active)',
               width: 72,
               height: 72,
               position: 'absolute',
@@ -61,7 +62,7 @@ export const SidebarTab: FC<SidebarTabProps> = ({ tabs, active, onChange }) => {
                 right: 0,
                 top: -8,
                 background:
-                  'radial-gradient(circle closest-side,transparent 0,transparent 50%,#fff 0) 200% 200% /400% 400%',
+                  'radial-gradient(circle closest-side,transparent 0,transparent 50%,var(--app-tab-active) 0) 200% 200% /400% 400%',
               }}
             />
             <div
@@ -73,7 +74,7 @@ export const SidebarTab: FC<SidebarTabProps> = ({ tabs, active, onChange }) => {
                 bottom: -8,
                 transform: 'scaleY(-1)',
                 background:
-                  'radial-gradient(circle closest-side,transparent 0,transparent 50%,#fff 0) 200% 200% /400% 400%',
+                  'radial-gradient(circle closest-side,transparent 0,transparent 50%,var(--app-tab-active) 0) 200% 200% /400% 400%',
               }}
             />
           </div>
@@ -111,6 +112,7 @@ export const SidebarTab: FC<SidebarTabProps> = ({ tabs, active, onChange }) => {
                 css={{
                   position: 'absolute',
                   background: '#fdebcf',
+                  color: '#181c32',
                   borderRadius: 9999,
                   fontSize: 9,
                   padding: '2px 4px',

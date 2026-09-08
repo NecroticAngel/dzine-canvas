@@ -8,8 +8,9 @@ export const LayerSettings = () => {
   return (
     <div
       css={{
-        background: 'white',
-        borderBottom: '1px solid rgba(57,76,96,.15)',
+        background: 'var(--app-panel)',
+        borderBottom: '1px solid var(--app-border)',
+        color: 'var(--app-text)',
         height: 50,
         overflowX: 'auto',
         flexShrink: 0,
@@ -18,7 +19,7 @@ export const LayerSettings = () => {
           bottom: 0,
           left: 0,
           right: 0,
-          background: '#fff',
+          background: 'var(--app-panel)',
           display: selectedLayerIds.length > 0 ? 'flex' : 'none',
           justifyContent: 'center',
           zIndex: 20,

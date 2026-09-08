@@ -93,8 +93,8 @@ export const Sidebar = () => {
         display: 'flex',
         zIndex: 2,
         position: 'relative',
-        backgroundColor: '#ffffff',
-        borderRight: '1px solid rgba(217, 219, 228, 0.6)',
+        backgroundColor: 'var(--app-sidebar)',
+        borderRight: '1px solid var(--app-border-strong)',
       }}
     >
       <div
@@ -114,13 +114,15 @@ export const Sidebar = () => {
           <div
             css={{
               width: tab === 'Draw' ? 0 : 360,
+              background: 'var(--app-panel)',
+              color: 'var(--app-text)',
               '@media (max-width: 900px)': {
                 width: '100%',
                 position: 'fixed',
                 bottom: 0,
                 left: 0,
                 top: 0,
-                background: '#fff',
+                background: 'var(--app-panel)',
               },
             }}
           >

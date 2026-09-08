@@ -17,6 +17,7 @@ import {
   exportDesign,
   type ExportFormat,
 } from '../../../../utils/exportDesign';
+import { useAppTheme } from '../../../../shared/theme';
 
 interface HeaderLayoutProps {
   openPreview: () => void;
@@ -72,6 +73,7 @@ const EditorHeaderForwardRef: ForwardRefRenderFunction<
   const exportMenuRef = useRef<HTMLDivElement>(null);
   const filesMenuRef = useRef<HTMLDivElement>(null);
   const { actions, query, currentDesign, designs } = useEditor();
+  const { mode, toggleMode } = useAppTheme();
   const [saveState, setSaveState] = useState<'idle' | 'saved'>('idle');
   const [exportOpen, setExportOpen] = useState(false);
   const [filesOpen, setFilesOpen] = useState(false);
@@ -234,13 +236,38 @@ const EditorHeaderForwardRef: ForwardRefRenderFunction<
     >
       <div css={{ display: 'flex', alignItems: 'center', gap: 16, minWidth: 0 }}>
         <div
-          css={{ color: 'white', height: 42, paddingTop: 6, paddingBottom: 6 }}
+          css={{
+            color: 'white',
+            height: 42,
+            width: 160,
+            paddingTop: 6,
+            paddingBottom: 6,
+            display: 'flex',
+            alignItems: 'center',
+            flexShrink: 0,
+          }}
         >
-          <a href="https://lidojs.com" rel="noreferrer" target="_blank">
+          <a
+            href="https://lidojs.com"
+            rel="noreferrer"
+            target="_blank"
+            css={{
+              display: 'flex',
+              alignItems: 'center',
+              width: '100%',
+              height: '100%',
+            }}
+          >
             <img
               alt="LidoJs"
-              css={{ maxHeight: '100%' }}
-              src="./assets/logo.png"
+              css={{
+                width: '100%',
+                height: '100%',
+                maxHeight: '100%',
+                objectFit: 'contain',
+                objectPosition: 'left center',
+              }}
+              src="./assets/dzine_canvas.png"
             />
           </a>
         </div>
@@ -599,6 +626,26 @@ const EditorHeaderForwardRef: ForwardRefRenderFunction<
               ))}
             </div>
           )}
+        </div>
+        <div
+          css={{
+            cursor: 'pointer',
+            color: '#fff',
+            fontWeight: 700,
+            background: '#3a3a4c',
+            padding: '8px 14px',
+            borderRadius: 8,
+            ':hover': {
+              background: 'rgba(58,58,76,0.5)',
+            },
+            '@media (max-width: 900px)': {
+              display: 'none',
+            },
+          }}
+          onClick={toggleMode}
+          title={mode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+        >
+          {mode === 'dark' ? 'Light' : 'Dark'}
         </div>
         <div
           css={{

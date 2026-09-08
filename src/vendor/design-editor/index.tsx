@@ -16,6 +16,7 @@ import {
   type ReactNode,
 } from 'react';
 import { v4 as uuid } from 'uuid';
+import QRCode from 'qrcode';
 import { data as samplePages } from '../../constant/data';
 import {
   createBlankPages,
@@ -105,6 +106,7 @@ type EditorActions = {
   ) => void;
   updateLayerText: (layerId: string, text: string) => void;
   registerTextInput: (el: HTMLTextAreaElement | null) => void;
+  deleteLayers: (ids?: string[]) => void;
   saveDesign: () => void;
   newDesign: (name?: string) => void;
   openDesign: (id: string) => void;
@@ -260,6 +262,134 @@ const buildTextDoc = (existingDoc: unknown, text: string) => {
 
 const HANDLE_SIZE = 10;
 
+const colorToHex = (color: string, fallback: string) => {
+  const value = color.trim();
+  if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(value)) return value;
+  const match = value.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
+  if (!match) return fallback;
+  return `#${[match[1], match[2], match[3]]
+    .map((part) => Number(part).toString(16).padStart(2, '0'))
+    .join('')}`;
+};
+
+const QrCodeView = ({
+  text,
+  bgColor,
+  textColor,
+  logo,
+}: {
+  text: string;
+  bgColor: string;
+  textColor: string;
+  logo?: string;
+}) => {
+  const [src, setSrc] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    const payload = text.trim() || ' ';
+    QRCode.toDataURL(payload, {
+      errorCorrectionLevel: 'H',
+      margin: 1,
+      width: 512,
+      color: {
+        dark: colorToHex(textColor, '#1e1e2d'),
+        light: colorToHex(bgColor, '#ffffff'),
+      },
+    })
+      .then((url) => {
+        if (!cancelled) setSrc(url);
+      })
+      .catch(() => {
+        if (!cancelled) setSrc('');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [text, bgColor, textColor]);
+
+  return (
+    <div
+      style={{
+        width: '100%',
+        height: '100%',
+        position: 'relative',
+        background: bgColor,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        overflow: 'hidden',
+      }}
+    >
+      {src ? (
+        <img
+          alt=""
+          draggable={false}
+          src={src}
+          style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none' }}
+        />
+      ) : (
+        <div
+          style={{
+            fontSize: 12,
+            color: textColor,
+            textAlign: 'center',
+            padding: 8,
+            pointerEvents: 'none',
+          }}
+        >
+          QR
+          <div style={{ fontSize: 10, opacity: 0.7, marginTop: 4, wordBreak: 'break-all' }}>
+            {text || 'Empty'}
+          </div>
+        </div>
+      )}
+      {logo ? (
+        <img
+          alt=""
+          draggable={false}
+          src={logo}
+          style={{
+            position: 'absolute',
+            width: '22%',
+            height: '22%',
+            objectFit: 'contain',
+            pointerEvents: 'none',
+            background: bgColor,
+            borderRadius: 6,
+            padding: 2,
+          }}
+        />
+      ) : null}
+    </div>
+  );
+};
+
+const removeLayerTree = (
+  layers: SerializedLayers,
+  rootId: string,
+) => {
+  const stack = [rootId];
+  const removed = new Set<string>();
+  while (stack.length) {
+    const id = stack.pop() as string;
+    if (removed.has(id) || id === 'ROOT') continue;
+    removed.add(id);
+    const node = layers[id];
+    if (node?.child?.length) stack.push(...node.child);
+  }
+  for (const id of removed) {
+    const parentId = layers[id]?.parent;
+    if (parentId && layers[parentId]) {
+      layers[parentId] = {
+        ...layers[parentId],
+        child: layers[parentId].child.filter((childId) => childId !== id),
+      };
+    }
+    delete layers[id];
+  }
+};
+
 const LayerView = ({
   layerId,
   layers,
@@ -303,8 +433,10 @@ const LayerView = ({
   const position = (props.position as Point) ?? { x: 0, y: 0 };
   const boxSize = (props.boxSize as PageSize) ?? { width: 0, height: 0 };
   const rotate = Number(props.rotate ?? 0);
-  const layerScale = Number(props.scale ?? 1);
   const name = layer.type.resolvedName;
+  // Qr templates store a module scale that shouldn't also CSS-scale the box.
+  const layerScale =
+    name === 'QrCodeLayer' ? 1 : Number(props.scale ?? 1);
   const selected = ctx.selectedLayerIds.includes(layerId);
   const pageScale = scaleCtx?.scale ?? ctx.scale;
 
@@ -1130,7 +1262,7 @@ export const DesignFrame = ({ data }: { data?: SerializedPage[] }) => {
         css={{
           width: size.width * scale,
           height: size.height * scale,
-          boxShadow: '0 2px 8px rgba(0,0,0,.15)',
+          boxShadow: 'var(--app-canvas-shadow)',
           background: '#fff',
         }}
         onPointerDown={(e) => e.stopPropagation()}
@@ -1161,6 +1293,7 @@ export const PageControl = () => {
         justifyContent: 'space-between',
         padding: '0 16px',
         fontSize: 13,
+        color: 'var(--app-text)',
       }}
     >
       <button

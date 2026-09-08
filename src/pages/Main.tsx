@@ -1,5 +1,10 @@
 import { DesignPage } from '../features/design/pages';
+import { AppThemeProvider } from '../shared/theme';
 
 export default function Page() {
-  return <DesignPage />;
+  return (
+    <AppThemeProvider>
+      <DesignPage />
+    </AppThemeProvider>
+  );
 }

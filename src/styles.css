@@ -1,8 +1,44 @@
 
+:root,
+html[data-theme='light'] {
+  color-scheme: light;
+  --app-workspace: #ebecf0;
+  --app-sidebar: #ffffff;
+  --app-panel: #ffffff;
+  --app-surface: #ebecf0;
+  --app-surface-2: #f5f6f8;
+  --app-border: rgba(57, 76, 96, 0.15);
+  --app-border-strong: rgba(217, 219, 228, 0.6);
+  --app-text: #5e6278;
+  --app-text-strong: #181c32;
+  --app-text-muted: #7e8299;
+  --app-tab-rail: #ffffff;
+  --app-tab-active: #ffffff;
+  --app-canvas-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+html[data-theme='dark'] {
+  color-scheme: dark;
+  --app-workspace: #0e0e14;
+  --app-sidebar: #14141c;
+  --app-panel: #1a1a24;
+  --app-surface: #22222e;
+  --app-surface-2: #2a2a38;
+  --app-border: rgba(255, 255, 255, 0.1);
+  --app-border-strong: rgba(255, 255, 255, 0.12);
+  --app-text: #b4b8c7;
+  --app-text-strong: #f0f1f5;
+  --app-text-muted: #8b90a5;
+  --app-tab-rail: #12121a;
+  --app-tab-active: #1a1a24;
+  --app-canvas-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+}
+
 html, body {
     margin: 0;
     font-family: 'Nunito', sans-serif;
-    color: #5E6278;
+    color: var(--app-text);
+    background: var(--app-workspace);
     font-size: 14px;
 }
 
