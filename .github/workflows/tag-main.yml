@@ -1,0 +1,22 @@
+name: Tag production release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    if: github.ref_name == 'th/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          ref: th/main
+      - name: Create production tag
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          scripts/next-release-tag.sh v

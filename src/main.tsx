@@ -17,7 +17,9 @@ if (!createRoot) {
   throw new Error('react-dom/client createRoot is unavailable');
 }
 
-axios.defaults.baseURL = process.env.API_ENDPOINT || '';
+const configuredApiEndpoint = process.env.API_ENDPOINT || '';
+const runtimeBasePath = document.documentElement.dataset.basePath || '';
+axios.defaults.baseURL = configuredApiEndpoint || `${runtimeBasePath}/api`;
 axios.defaults.timeout = 2500;
 axios.interceptors.response.use(
   (response) => response,
