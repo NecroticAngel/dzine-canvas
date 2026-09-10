@@ -218,12 +218,17 @@ export const deleteDesignInLibrary = (
   id: string,
 ): { removed: boolean; active: SavedDesign | null } => {
   const store = readStore();
-  if (!store || store.designs.length <= 1) {
-    return { removed: false, active: getActiveDesign() };
+  if (!store) {
+    return { removed: false, active: null };
   }
   const nextDesigns = store.designs.filter((d) => d.id !== id);
   if (nextDesigns.length === store.designs.length) {
     return { removed: false, active: getActiveDesign() };
+  }
+  if (nextDesigns.length === 0) {
+    localStorage.removeItem(LIBRARY_KEY);
+    localStorage.removeItem(LEGACY_KEY);
+    return { removed: true, active: null };
   }
   const activeId =
     store.activeId === id ? nextDesigns[0].id : store.activeId;
@@ -244,4 +249,4 @@ export const safeFileName = (name: string) =>
     .trim()
     .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '-')
     .replace(/\s+/g, ' ')
-    .slice(0, 80) || 'lidojs-design';
+    .slice(0, 80) || 'dzine-canvas';

@@ -5,6 +5,7 @@ import PlayCircleIcon from '@duyank/icons/regular/PlayCircle';
 import { useEditor } from '@lidojs/design-editor';
 import {
   type ChangeEvent,
+  type FormEvent,
   type ForwardRefRenderFunction,
   forwardRef,
   useEffect,
@@ -21,7 +22,13 @@ import { useAppTheme } from '../../../../shared/theme';
 
 interface HeaderLayoutProps {
   openPreview: () => void;
+  onBackHome?: () => void;
 }
+
+type NameDialogState =
+  | { mode: 'new'; title: string; initial: string }
+  | { mode: 'rename'; id: string; title: string; initial: string }
+  | { mode: 'save'; title: string; initial: string };
 
 const EXPORT_OPTIONS: { format: ExportFormat; label: string; hint: string }[] =
   [
@@ -67,7 +74,7 @@ const menuItemCss = {
 const EditorHeaderForwardRef: ForwardRefRenderFunction<
   HTMLDivElement,
   HeaderLayoutProps
-> = ({ openPreview }, ref) => {
+> = ({ openPreview, onBackHome }, ref) => {
   const importRef = useRef<HTMLInputElement>(null);
   const openFileRef = useRef<HTMLInputElement>(null);
   const exportMenuRef = useRef<HTMLDivElement>(null);
@@ -78,6 +85,9 @@ const EditorHeaderForwardRef: ForwardRefRenderFunction<
   const [exportOpen, setExportOpen] = useState(false);
   const [filesOpen, setFilesOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [nameDialog, setNameDialog] = useState<NameDialogState | null>(null);
+  const [nameDraft, setNameDraft] = useState('');
+  const nameInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!exportOpen && !filesOpen) return;
@@ -94,6 +104,22 @@ const EditorHeaderForwardRef: ForwardRefRenderFunction<
     return () => window.removeEventListener('pointerdown', onPointerDown);
   }, [exportOpen, filesOpen]);
 
+  useEffect(() => {
+    if (!nameDialog) return;
+    setNameDraft(nameDialog.initial);
+    const frame = window.requestAnimationFrame(() => {
+      nameInputRef.current?.focus();
+      nameInputRef.current?.select();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [nameDialog]);
+
+  const openNameDialog = (next: NameDialogState) => {
+    setFilesOpen(false);
+    setExportOpen(false);
+    setNameDialog(next);
+  };
+
   const handleExport = async (format: ExportFormat) => {
     if (exporting) return;
     setExporting(true);
@@ -106,7 +132,7 @@ const EditorHeaderForwardRef: ForwardRefRenderFunction<
       );
       const pageIndex = query.activePage();
       const pageSize = query.getPageSize(pageIndex);
-      const base = safeFileName(currentDesign?.name ?? 'lidojs-design');
+      const base = safeFileName(currentDesign?.name ?? 'dzine-canvas');
       await exportDesign({
         format,
         pageIndex,
@@ -126,11 +152,9 @@ const EditorHeaderForwardRef: ForwardRefRenderFunction<
     }
   };
 
-  const handleSave = () => {
+  const finishSave = (name: string) => {
     const currentName = currentDesign?.name ?? 'Untitled';
-    const nextName = window.prompt('Save design as', currentName);
-    if (nextName === null) return;
-    const trimmed = nextName.trim() || currentName;
+    const trimmed = name.trim() || currentName;
     if (currentDesign && trimmed !== currentName) {
       actions.renameDesign(currentDesign.id, trimmed);
     }
@@ -139,11 +163,34 @@ const EditorHeaderForwardRef: ForwardRefRenderFunction<
     window.setTimeout(() => setSaveState('idle'), 1500);
   };
 
+  const handleSave = () => {
+    openNameDialog({
+      mode: 'save',
+      title: 'Save design as',
+      initial: currentDesign?.name ?? 'Untitled',
+    });
+  };
+
+  const handleNameDialogSubmit = (event?: FormEvent) => {
+    event?.preventDefault();
+    if (!nameDialog) return;
+    const trimmed = nameDraft.trim();
+    if (nameDialog.mode === 'new') {
+      actions.newDesign(trimmed || undefined);
+    } else if (nameDialog.mode === 'rename') {
+      if (!trimmed) return;
+      actions.renameDesign(nameDialog.id, trimmed);
+    } else {
+      finishSave(trimmed);
+    }
+    setNameDialog(null);
+  };
+
   const parseDesignFile = async (file: File) => {
     const text = await file.text();
     const parsed = JSON.parse(text) as unknown;
     if (!Array.isArray(parsed) || !parsed[0] || typeof parsed[0] !== 'object') {
-      throw new Error('Invalid design file. Expected a LidoJS JSON export.');
+      throw new Error('Invalid design file. Expected a D-Zine Canvas JSON export.');
     }
     return parsed as Parameters<typeof actions.importDesignFile>[0];
   };
@@ -187,22 +234,31 @@ const EditorHeaderForwardRef: ForwardRefRenderFunction<
 
   const handleSaveToComputer = () => {
     actions.saveDesign();
-    const base = safeFileName(currentDesign?.name ?? 'lidojs-design');
+    const base = safeFileName(currentDesign?.name ?? 'dzine-canvas');
     downloadObjectAsJson(base, query.serialize());
     setFilesOpen(false);
   };
 
   const handleNewDesign = () => {
-    const name = window.prompt('Name for the new design', 'Untitled');
-    if (name === null) return;
-    actions.newDesign(name.trim() || undefined);
-    setFilesOpen(false);
+    openNameDialog({
+      mode: 'new',
+      title: 'Name your new design',
+      initial: '',
+    });
   };
 
   const handleRename = (id: string, currentName: string) => {
-    const name = window.prompt('Rename design', currentName);
-    if (name === null || !name.trim()) return;
-    actions.renameDesign(id, name.trim());
+    openNameDialog({
+      mode: 'rename',
+      id,
+      title: 'Rename design',
+      initial: currentName,
+    });
+  };
+
+  const handleRenameCurrent = () => {
+    if (!currentDesign) return;
+    handleRename(currentDesign.id, currentDesign.name);
   };
 
   const handleDelete = (id: string, name: string) => {
@@ -254,19 +310,27 @@ const EditorHeaderForwardRef: ForwardRefRenderFunction<
             flexShrink: 0,
           }}
         >
-          <a
-            href="https://lidojs.com"
-            rel="noreferrer"
-            target="_blank"
+          <button
+            type="button"
+            title={onBackHome ? 'Back to designs' : undefined}
             css={{
               display: 'flex',
               alignItems: 'center',
               width: '100%',
               height: '100%',
+              border: 'none',
+              background: 'transparent',
+              padding: 0,
+              cursor: onBackHome ? 'pointer' : 'default',
+            }}
+            onClick={() => {
+              if (!onBackHome) return;
+              actions.saveDesign();
+              onBackHome();
             }}
           >
             <img
-              alt="LidoJs"
+              alt="D-Zine Canvas"
               css={{
                 width: '100%',
                 height: '100%',
@@ -276,8 +340,34 @@ const EditorHeaderForwardRef: ForwardRefRenderFunction<
               }}
               src="./assets/dzine_canvas.png"
             />
-          </a>
+          </button>
         </div>
+        {onBackHome && (
+          <button
+            type="button"
+            css={{
+              border: '1px solid #3a3a4c',
+              background: 'transparent',
+              color: '#c8cce0',
+              borderRadius: 8,
+              padding: '8px 12px',
+              cursor: 'pointer',
+              fontWeight: 700,
+              fontSize: 13,
+              flexShrink: 0,
+              ':hover': { color: '#fff', background: '#2a2a3d' },
+              '@media (max-width: 900px)': {
+                display: 'none',
+              },
+            }}
+            onClick={() => {
+              actions.saveDesign();
+              onBackHome();
+            }}
+          >
+            Designs
+          </button>
+        )}
         <div
           ref={filesMenuRef}
           css={{
@@ -290,6 +380,7 @@ const EditorHeaderForwardRef: ForwardRefRenderFunction<
         >
           <button
             type="button"
+            title="Open Files menu. Double-click the name to rename."
             css={{
               display: 'flex',
               alignItems: 'center',
@@ -310,6 +401,11 @@ const EditorHeaderForwardRef: ForwardRefRenderFunction<
             onClick={() => {
               setExportOpen(false);
               setFilesOpen((open) => !open);
+            }}
+            onDoubleClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              handleRenameCurrent();
             }}
           >
             <span
@@ -337,6 +433,23 @@ const EditorHeaderForwardRef: ForwardRefRenderFunction<
               >
                 My Designs
               </div>
+              <button
+                type="button"
+                css={menuItemCss}
+                onClick={handleRenameCurrent}
+              >
+                <span>Rename…</span>
+                <span css={{ color: '#9aa0b5', fontWeight: 500, fontSize: 12 }}>
+                  {currentDesign?.name ?? 'Untitled'}
+                </span>
+              </button>
+              <div
+                css={{
+                  height: 1,
+                  background: '#3a3a4c',
+                  margin: '4px 6px 6px',
+                }}
+              />
               <div css={{ maxHeight: 220, overflowY: 'auto', marginBottom: 4 }}>
                 {designs.map((design) => {
                   const active = design.id === currentDesign?.id;
@@ -371,6 +484,11 @@ const EditorHeaderForwardRef: ForwardRefRenderFunction<
                           actions.openDesign(design.id);
                           setFilesOpen(false);
                         }}
+                        onDoubleClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          handleRename(design.id, design.name);
+                        }}
                       >
                         <span
                           css={{
@@ -395,6 +513,7 @@ const EditorHeaderForwardRef: ForwardRefRenderFunction<
                       <button
                         type="button"
                         title="Rename"
+                        aria-label={`Rename ${design.name}`}
                         css={{
                           border: 'none',
                           background: 'transparent',
@@ -405,7 +524,10 @@ const EditorHeaderForwardRef: ForwardRefRenderFunction<
                           fontSize: 12,
                           ':hover': { color: '#fff', background: '#3a3a4c' },
                         }}
-                        onClick={() => handleRename(design.id, design.name)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleRename(design.id, design.name);
+                        }}
                       >
                         ✎
                       </button>
@@ -422,7 +544,8 @@ const EditorHeaderForwardRef: ForwardRefRenderFunction<
                           fontSize: 12,
                           ':hover': { color: '#fff', background: '#3a3a4c' },
                         }}
-                        onClick={() => {
+                        onClick={(event) => {
+                          event.stopPropagation();
                           actions.duplicateDesign(design.id);
                           setFilesOpen(false);
                         }}
@@ -442,7 +565,10 @@ const EditorHeaderForwardRef: ForwardRefRenderFunction<
                           fontSize: 12,
                           ':hover': { color: '#ff8f8f', background: '#3a3a4c' },
                         }}
-                        onClick={() => handleDelete(design.id, design.name)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleDelete(design.id, design.name);
+                        }}
                       >
                         ×
                       </button>
@@ -458,7 +584,7 @@ const EditorHeaderForwardRef: ForwardRefRenderFunction<
                 }}
               />
               <button type="button" css={menuItemCss} onClick={handleNewDesign}>
-                <span>New design</span>
+                <span>New design…</span>
               </button>
               <button
                 type="button"
@@ -539,7 +665,7 @@ const EditorHeaderForwardRef: ForwardRefRenderFunction<
           </div>
         </div>
         <a
-          href="https://github.com/lidojs/canva-clone"
+          href="https://github.com/NecroticAngel/dzine-canvas"
           rel="noreferrer"
           target="_blank"
         >
@@ -698,6 +824,109 @@ const EditorHeaderForwardRef: ForwardRefRenderFunction<
           Preview
         </div>
       </div>
+      {nameDialog && (
+        <div
+          role="presentation"
+          css={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 200,
+            background: 'rgba(8, 8, 16, 0.55)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+          }}
+          onClick={() => setNameDialog(null)}
+        >
+          <form
+            css={{
+              width: '100%',
+              maxWidth: 380,
+              background: '#2a2a3d',
+              border: '1px solid #3a3a4c',
+              borderRadius: 12,
+              padding: 20,
+              boxShadow: '0 18px 40px rgba(0,0,0,.45)',
+            }}
+            onClick={(event) => event.stopPropagation()}
+            onSubmit={handleNameDialogSubmit}
+          >
+            <div
+              css={{
+                color: '#fff',
+                fontWeight: 700,
+                fontSize: 16,
+                marginBottom: 12,
+              }}
+            >
+              {nameDialog.title}
+            </div>
+            <input
+              ref={nameInputRef}
+              value={nameDraft}
+              placeholder="e.g. Cover page"
+              css={{
+                width: '100%',
+                boxSizing: 'border-box',
+                border: '1px solid #4a4a60',
+                background: '#1e1e2d',
+                color: '#fff',
+                borderRadius: 8,
+                padding: '10px 12px',
+                fontSize: 14,
+                outline: 'none',
+                ':focus': {
+                  borderColor: '#3d8eff',
+                },
+              }}
+              onChange={(event) => setNameDraft(event.target.value)}
+            />
+            <div
+              css={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: 8,
+                marginTop: 16,
+              }}
+            >
+              <button
+                type="button"
+                css={{
+                  border: '1px solid #4a4a60',
+                  background: 'transparent',
+                  color: '#c8cce0',
+                  borderRadius: 8,
+                  padding: '8px 14px',
+                  cursor: 'pointer',
+                  fontWeight: 600,
+                }}
+                onClick={() => setNameDialog(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                css={{
+                  border: 'none',
+                  background: '#3d8eff',
+                  color: '#fff',
+                  borderRadius: 8,
+                  padding: '8px 14px',
+                  cursor: 'pointer',
+                  fontWeight: 700,
+                }}
+              >
+                {nameDialog.mode === 'new'
+                  ? 'Create'
+                  : nameDialog.mode === 'save'
+                    ? 'Save'
+                    : 'Rename'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 };

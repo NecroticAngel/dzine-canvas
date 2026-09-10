@@ -442,7 +442,7 @@ const server = app.listen(storageConfig.port, storageConfig.host, (err) => {
   }
 
   console.log(
-    `NecroZine canvas on http://${storageConfig.host}:${storageConfig.port}${BASE_PATH}/`,
+    `D-Zine Canvas on http://${storageConfig.host}:${storageConfig.port}${BASE_PATH}/`,
   );
   console.log(`API             ${BASE_PATH}/api`);
   console.log(`STORAGE_ROOT    ${bootPaths.storageRoot}`);

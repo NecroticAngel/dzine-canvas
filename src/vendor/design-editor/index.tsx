@@ -687,6 +687,135 @@ const LayerView = ({
       ) : null;
     }
 
+    if (name === 'TableLayer') {
+      type TableBorder = {
+        width?: number;
+        color?: string;
+        style?: string;
+      };
+      type TableCell = {
+        row: number;
+        col: number;
+        background?: string;
+        border?: {
+          top?: TableBorder;
+          right?: TableBorder;
+          bottom?: TableBorder;
+          left?: TableBorder;
+        };
+        value?: unknown;
+      };
+      type TableFormat = {
+        cellPadding?: number;
+        cellSpacing?: number;
+        rows?: { index: number; height: number }[];
+        columns?: { index: number; width: number }[];
+      };
+
+      const format = (props.format as TableFormat | undefined) ?? {};
+      const cells = (Array.isArray(props.cells) ? props.cells : []) as TableCell[];
+      const rows =
+        format.rows && format.rows.length > 0
+          ? format.rows
+          : [{ index: 1, height: 70 }];
+      const cols =
+        format.columns && format.columns.length > 0
+          ? format.columns
+          : [{ index: 1, width: 200 }];
+      const totalW = cols.reduce((sum, col) => sum + (col.width || 0), 0) || 1;
+      const totalH = rows.reduce((sum, row) => sum + (row.height || 0), 0) || 1;
+      const padding = Number(format.cellPadding ?? 8);
+      const spacing = Number(format.cellSpacing ?? 0);
+      const cellMap = new Map(
+        cells.map((cell) => [`${cell.row}:${cell.col}`, cell] as const),
+      );
+
+      const borderCss = (side?: TableBorder) => {
+        if (!side) return '1px solid #111';
+        return `${side.width ?? 1}px ${side.style ?? 'solid'} ${side.color ?? '#111'}`;
+      };
+
+      return (
+        <div
+          style={{
+            width: '100%',
+            height: '100%',
+            display: 'grid',
+            gridTemplateColumns: cols
+              .map((col) => `${((col.width || 0) / totalW) * 100}%`)
+              .join(' '),
+            gridTemplateRows: rows
+              .map((row) => `${((row.height || 0) / totalH) * 100}%`)
+              .join(' '),
+            gap: spacing,
+            boxSizing: 'border-box',
+            overflow: 'hidden',
+            background: '#fff',
+            pointerEvents: 'none',
+          }}
+        >
+          {rows.flatMap((row) =>
+            cols.map((col) => {
+              const cell = cellMap.get(`${row.index}:${col.index}`);
+              const doc = cell?.value as
+                | { content?: { attrs?: Record<string, unknown> }[] }
+                | undefined;
+              const attrs = doc?.content?.[0]?.attrs ?? {};
+              const align = String(attrs.textAlign ?? 'center');
+              return (
+                <div
+                  key={`${row.index}-${col.index}`}
+                  style={{
+                    background: cell?.background ?? '#fff',
+                    borderTop: borderCss(cell?.border?.top),
+                    borderRight: borderCss(cell?.border?.right),
+                    borderBottom: borderCss(cell?.border?.bottom),
+                    borderLeft: borderCss(cell?.border?.left),
+                    padding,
+                    boxSizing: 'border-box',
+                    overflow: 'hidden',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent:
+                      align === 'left'
+                        ? 'flex-start'
+                        : align === 'right'
+                          ? 'flex-end'
+                          : 'center',
+                    color: String(attrs.color ?? '#333'),
+                    fontFamily: String(
+                      attrs.fontFamily ?? 'Nunito, sans-serif',
+                    ),
+                    fontSize: String(attrs.fontSize ?? '14px'),
+                    lineHeight: Number(attrs.lineHeight ?? 1.4),
+                    textTransform: String(
+                      attrs.textTransform ?? '',
+                    ) as CSSProperties['textTransform'],
+                    textAlign: align as CSSProperties['textAlign'],
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                  }}
+                >
+                  {extractText(cell?.value)}
+                </div>
+              );
+            }),
+          )}
+        </div>
+      );
+    }
+
+    if (name === 'QrCodeLayer') {
+      return (
+        <QrCodeView
+          text={String(props.text ?? '')}
+          bgColor={String(props.bgColor ?? '#ffffff')}
+          textColor={String(props.textColor ?? '#1e1e2d')}
+          logo={props.logo ? String(props.logo) : undefined}
+        />
+      );
+    }
+
     return layer.child.map((childId) => (
       <LayerView key={childId} layerId={childId} layers={layers} />
     ));

@@ -19,7 +19,7 @@ export const qrCodeList: QrCodeItem[] = [
           '3f39efa2-4017-4c77-b3a9-c98456c629f0': {
             type: { resolvedName: 'QrCodeLayer' },
             props: {
-              text: 'https://lidojs.com',
+              text: 'https://d-zine.example',
               position: { x: 45.586770981507925, y: 121.96449211646916 },
               boxSize: {
                 width: 350.8264580369844,
@@ -78,7 +78,7 @@ export const qrCodeList: QrCodeItem[] = [
           '3f39efa2-4017-4c77-b3a9-c98456c629f0': {
             type: { resolvedName: 'QrCodeLayer' },
             props: {
-              text: 'https://lidojs.com',
+              text: 'https://d-zine.example',
               position: { x: 22.108510111942678, y: 21.070943504373645 },
               boxSize: {
                 width: 350.8264580369844,
@@ -232,7 +232,7 @@ export const qrCodeList: QrCodeItem[] = [
           '9fa1b8a2-7771-4d17-b319-d551e4001836': {
             type: { resolvedName: 'QrCodeLayer' },
             props: {
-              text: 'https://lidojs.com',
+              text: 'https://d-zine.example',
               position: { x: 24.866770981508125, y: 25.24833839665183 },
               boxSize: {
                 width: 279.8264580369843,

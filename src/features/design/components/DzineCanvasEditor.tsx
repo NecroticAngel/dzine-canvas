@@ -10,9 +10,13 @@ import { PagesPanel } from './pages-panel';
 import { PreviewModal } from './preview';
 import { Sidebar } from './sidebar';
 
-export const LidoJSEditor = ({
+export const DzineCanvasEditor = ({
   googleFontList,
-}: { googleFontList: FontData[] }) => {
+  onBackHome,
+}: {
+  googleFontList: FontData[];
+  onBackHome?: () => void;
+}) => {
   const leftSidebarRef = useRef<HTMLDivElement>(null);
   const [openPreview, setOpenPreview] = useState(false);
 
@@ -82,7 +86,10 @@ export const LidoJSEditor = ({
           color: 'var(--app-text)',
         }}
       >
-        <EditorHeader openPreview={() => setOpenPreview(true)} />
+        <EditorHeader
+          openPreview={() => setOpenPreview(true)}
+          onBackHome={onBackHome}
+        />
         {openPreview && <PreviewModal onClose={() => setOpenPreview(false)} />}
         <div
           css={{

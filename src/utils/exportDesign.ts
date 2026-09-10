@@ -81,7 +81,7 @@ export const exportDesign = async (options: {
   pages: unknown;
   fileName?: string;
 }) => {
-  const base = options.fileName ?? 'lidojs-design';
+  const base = options.fileName ?? 'dzine-canvas';
 
   if (options.format === 'json') {
     downloadObjectAsJson(base, options.pages);

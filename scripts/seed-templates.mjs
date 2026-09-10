@@ -14,7 +14,7 @@ writeFileSync(
   JSON.stringify(
     {
       id: 'starter-lidojs',
-      name: 'Starter LidoJS',
+      name: 'Starter D-Zine Canvas',
       img: '/thumbs/starter-lidojs.svg',
       elements: data[0],
     },

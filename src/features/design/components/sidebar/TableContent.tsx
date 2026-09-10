@@ -1090,12 +1090,79 @@ export const TableContent: FC<{ onClose: () => void }> = ({ onClose }) => {
       <div css={{ padding: '16px' }}>
         <div
           css={{ cursor: 'pointer', '-webkit-user-drag': 'element' }}
+          draggable
           onClick={addTable}
           onDragStart={(e) => handleDrag(e)}
         >
-          <div>
-            <img src="assets/images/table/table-1.png" alt="Table" />
+          <div
+            css={{
+              border: '1px solid var(--app-border)',
+              borderRadius: 8,
+              overflow: 'hidden',
+              background: '#fff',
+              color: '#545454',
+            }}
+          >
+            <div
+              css={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(4, 1fr)',
+                fontSize: 11,
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                textAlign: 'center',
+              }}
+            >
+              {['H1', 'H2', 'H3', 'H4'].map((label) => (
+                <div
+                  key={label}
+                  css={{
+                    borderBottom: '1px solid #111',
+                    borderRight: '1px solid #111',
+                    padding: '10px 4px',
+                    '&:last-of-type': { borderRight: 'none' },
+                  }}
+                >
+                  {label}
+                </div>
+              ))}
+            </div>
+            {[0, 1, 2].map((row) => (
+              <div
+                key={row}
+                css={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(4, 1fr)',
+                  fontSize: 10,
+                  textAlign: 'center',
+                  color: '#777',
+                }}
+              >
+                {[0, 1, 2, 3].map((col) => (
+                  <div
+                    key={col}
+                    css={{
+                      borderBottom: row < 2 ? '1px solid #111' : 'none',
+                      borderRight: col < 3 ? '1px solid #111' : 'none',
+                      padding: '12px 4px',
+                    }}
+                  >
+                    —
+                  </div>
+                ))}
+              </div>
+            ))}
           </div>
+          <p
+            css={{
+              margin: '10px 0 0',
+              fontSize: 12,
+              color: 'var(--app-text-muted, #888)',
+              textAlign: 'center',
+            }}
+          >
+            Click to add a 4×4 table
+          </p>
         </div>
       </div>
     </div>

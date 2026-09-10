@@ -1,1 +1,1 @@
-export * from './LidoJSEditor';
+export * from './DzineCanvasEditor';

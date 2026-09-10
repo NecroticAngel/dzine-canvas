@@ -41,7 +41,7 @@ export const Photo: FC<Props> = memo(({ image, name, username, ...props }) => {
         Photo by
         <a
           css={{ color: '#3d8eff' }}
-          href={`https://unsplash.com/@${username}?utm_source=lidojs&utm_medium=referral`}
+          href={`https://unsplash.com/@${username}?utm_source=dzine-canvas&utm_medium=referral`}
           rel="noreferrer"
           target="_blank"
         >
@@ -49,7 +49,7 @@ export const Photo: FC<Props> = memo(({ image, name, username, ...props }) => {
         </a>
         on
         <a
-          href={`https://unsplash.com/@${username}?utm_source=lidojs&utm_medium=referral`}
+          href={`https://unsplash.com/@${username}?utm_source=dzine-canvas&utm_medium=referral`}
           rel="noreferrer"
           target="_blank"
         >

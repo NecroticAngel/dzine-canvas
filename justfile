@@ -1,4 +1,4 @@
-# Dzine Canvas development commands.
+# D-Zine Canvas development commands.
 # Run `just` to list the available recipes.
 
 set dotenv-load := false
