@@ -1,4 +1,3 @@
-import BrowserIcon from '@duyank/icons/regular/Browser';
 import FrameCornersIcon from '@duyank/icons/regular/FrameCorners';
 import ImageIcon from '@duyank/icons/regular/Image';
 import LayoutIcon from '@duyank/icons/regular/Layout';
@@ -9,14 +8,13 @@ import SquareIcon from '@duyank/icons/regular/Square';
 import TableIcon from '@duyank/icons/regular/Table';
 import TextTIcon from '@duyank/icons/regular/TextT';
 import UploadIcon from '@duyank/icons/regular/Upload';
-import VideoIcon from '@duyank/icons/regular/Video';
+// import VideoIcon from '@duyank/icons/regular/Video';
 import { useEditor } from '@lidojs/design-editor';
 import { useCallback, useState } from 'react';
 import { SidebarTab } from '../tabs';
 import { DrawContent } from './DrawContent';
 import { FrameContent } from './FrameContent';
 import { GraphicContent } from './GraphicContent';
-import { IframeContent } from './IframeContent';
 import { ImageContent } from './ImageContent';
 import { QrCodeContent } from './QrCodeContent';
 import { ShapeContent } from './ShapeContent';
@@ -24,7 +22,7 @@ import { TableContent } from './TableContent';
 import { TemplateContent } from './TemplateContent';
 import { TextContent } from './TextContent';
 import { UploadContent } from './UploadContent';
-import { VideoContent } from './VideoContent';
+// import { VideoContent } from './VideoContent';
 
 const tabs = [
   {
@@ -62,18 +60,14 @@ const tabs = [
     isBusiness: true,
   },
   {
-    name: 'Widgets',
-    icon: <BrowserIcon />,
-  },
-  {
     name: 'Draw',
     icon: <PencilIcon />,
     isBusiness: true,
   },
-  {
-    name: 'Video',
-    icon: <VideoIcon />,
-  },
+  // {
+  //   name: 'Video',
+  //   icon: <VideoIcon />,
+  // },
   {
     name: 'Upload',
     icon: <UploadIcon />,
@@ -139,10 +133,9 @@ export const Sidebar = () => {
             {tab === 'Image' && <ImageContent onClose={handleCloseTab} />}
             {tab === 'Graphic' && <GraphicContent onClose={handleCloseTab} />}
             {tab === 'QrCode' && <QrCodeContent onClose={handleCloseTab} />}
-            {tab === 'Widgets' && <IframeContent onClose={handleCloseTab} />}
             {tab === 'Shape' && <ShapeContent onClose={handleCloseTab} />}
             {tab === 'Table' && <TableContent onClose={handleCloseTab} />}
-            {tab === 'Video' && <VideoContent onClose={handleCloseTab} />}
+            {/* {tab === 'Video' && <VideoContent onClose={handleCloseTab} />} */}
             {tab === 'Draw' && <DrawContent onClose={handleCloseTab} />}
             <UploadContent
               visibility={tab === 'Upload'}

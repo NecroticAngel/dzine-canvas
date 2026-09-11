@@ -1429,6 +1429,7 @@ export const useSelectedLayers = () => {
 
 export const DesignFrame = ({ data }: { data?: SerializedPage[] }) => {
   const { pages, activePage, scale, actions } = useEditor();
+  const ctx = useContext(EditorContext);
   const bootstrapped = useRef(false);
 
   useEffect(() => {
@@ -1444,11 +1445,30 @@ export const DesignFrame = ({ data }: { data?: SerializedPage[] }) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
         event.preventDefault();
         actions.saveDesign();
+        return;
       }
+
+      const isDeleteKey = event.key === 'Delete' || event.key === 'Backspace';
+      if (!isDeleteKey) return;
+
+      const target = event.target as HTMLElement | null;
+      const tag = target?.tagName?.toLowerCase();
+      const typing =
+        tag === 'input' ||
+        tag === 'textarea' ||
+        target?.isContentEditable ||
+        !!ctx?.editingLayerId;
+      if (typing) return;
+
+      const selected = ctx?.selectedLayerIds ?? [];
+      if (!selected.length) return;
+
+      event.preventDefault();
+      actions.deleteLayers(selected);
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [actions]);
+  }, [actions, ctx?.editingLayerId, ctx?.selectedLayerIds]);
 
   const rendered = pages.length ? pages : (data ?? []);
   const page = rendered[activePage] ?? rendered[0];
@@ -1551,6 +1571,7 @@ export const PageControl = () => {
 };
 
 export const LayerSettings = () => {
+  const { actions } = useEditor();
   const { selectedLayerIds } = useSelectedLayers();
   return (
     <div
@@ -1558,14 +1579,40 @@ export const LayerSettings = () => {
         height: '100%',
         display: 'flex',
         alignItems: 'center',
+        gap: 12,
         padding: '0 16px',
-        color: '#5E6278',
+        color: 'var(--app-text)',
         fontSize: 13,
       }}
     >
-      {selectedLayerIds.length
-        ? 'Drag to move · corners to resize · double-click text to edit'
-        : 'Select a layer to edit its settings'}
+      {selectedLayerIds.length === 0 ? (
+        <span css={{ opacity: 0.7 }}>Select a layer to edit</span>
+      ) : (
+        <>
+          <span>
+            Drag to move · corners to resize
+          </span>
+          <button
+            type="button"
+            css={{
+              border: '1px solid var(--app-border)',
+              background: 'transparent',
+              color: 'var(--app-text-strong)',
+              borderRadius: 8,
+              padding: '6px 12px',
+              cursor: 'pointer',
+              fontWeight: 700,
+              ':hover': { color: '#ff8f8f', borderColor: '#ff8f8f' },
+            }}
+            onClick={() => actions.deleteLayers(selectedLayerIds)}
+          >
+            Delete
+          </button>
+          <span css={{ opacity: 0.55, fontSize: 12 }}>
+            or press Delete / Backspace
+          </span>
+        </>
+      )}
     </div>
   );
 };
