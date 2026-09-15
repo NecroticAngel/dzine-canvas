@@ -15,8 +15,10 @@ provider "kubernetes" {}
 module "workspace" {
   source = "./_module"
 
-  cpu_default        = "4"
-  memory_default     = "8"
+  cpu_default        = "8"
+  cpu_max            = 16
+  memory_default     = "16"
+  memory_max         = 32
   default_repo       = "git@github.com:NecroticAngel/dzine-canvas.git"
   repo_description   = "Git repository URL to clone (SSH or HTTPS)"
   image              = "ghcr.io/haakco/coder-workspace-playwright:latest"
