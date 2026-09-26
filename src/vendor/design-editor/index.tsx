@@ -110,6 +110,8 @@ type EditorActions = {
     props: Record<string, unknown>;
   }) => void;
   addLayerTree: (tree: SerializedLayerTree) => void;
+  /** Merge several trees as a single undo step (multi-layer paste/duplicate). */
+  addLayerTrees: (trees: SerializedLayerTree[]) => void;
   startDragNDrop: (
     payload: { layer: string; data: SerializedLayerTree },
     _pos: Point,
@@ -439,6 +441,78 @@ const removeLayerTree = (
     }
     delete layers[id];
   }
+};
+
+/** Lift one layer subtree (with every descendant) out of a page. */
+const copyLayerTree = (
+  layers: SerializedLayers,
+  rootId: string,
+): SerializedLayerTree | null => {
+  if (rootId === 'ROOT' || !layers[rootId]) return null;
+  const stack = [rootId];
+  const ids = new Set<string>();
+  while (stack.length) {
+    const id = stack.pop() as string;
+    if (ids.has(id) || id === 'ROOT') continue;
+    ids.add(id);
+    const node = layers[id];
+    if (node?.child?.length) stack.push(...node.child);
+  }
+  const picked: SerializedLayers = {};
+  for (const id of ids) {
+    picked[id] = JSON.parse(JSON.stringify(layers[id])) as SerializedLayer;
+  }
+  return { rootId, layers: picked };
+};
+
+/**
+ * Re-key a copied tree so the same clipboard entry can be pasted repeatedly,
+ * nudging the root by `(dx, dy)` so a copy never hides behind its original.
+ */
+const remapLayerTree = (
+  tree: SerializedLayerTree,
+  dx: number,
+  dy: number,
+): SerializedLayerTree => {
+  const idMap = new Map<string, string>();
+  for (const id of Object.keys(tree.layers)) idMap.set(id, uuid());
+  const layers: SerializedLayers = {};
+  for (const [id, layer] of Object.entries(tree.layers)) {
+    layers[idMap.get(id) as string] = {
+      ...layer,
+      parent: layer.parent ? idMap.get(layer.parent) ?? 'ROOT' : null,
+      child: layer.child.map((childId) => idMap.get(childId) ?? childId),
+    };
+  }
+  const root = layers[idMap.get(tree.rootId) as string];
+  const position = (root.props.position ?? { x: 0, y: 0 }) as Point;
+  root.props = {
+    ...root.props,
+    position: { x: position.x + dx, y: position.y + dy },
+  };
+  return { rootId: idMap.get(tree.rootId) as string, layers };
+};
+
+/** Move one layer a single slot up (`forward`) or down its parent's child list. */
+const moveLayerInParent = (
+  layers: SerializedLayers,
+  id: string,
+  forward: boolean,
+): boolean => {
+  const layer = layers[id];
+  if (!layer) return false;
+  const parentId = layer.parent && layers[layer.parent] ? layer.parent : 'ROOT';
+  const parent = layers[parentId];
+  if (!parent) return false;
+  const index = parent.child.indexOf(id);
+  if (index < 0) return false;
+  const target = forward ? index + 1 : index - 1;
+  if (target < 0 || target >= parent.child.length) return false;
+  const child = [...parent.child];
+  child.splice(index, 1);
+  child.splice(target, 0, id);
+  layers[parentId] = { ...parent, child };
+  return true;
 };
 
 const LayerView = ({
@@ -1863,6 +1937,16 @@ export const Editor = ({
       addTree({ rootId: id, layers: { [id]: layer } });
     };
 
+    const addTrees = (trees: SerializedLayerTree[]) => {
+      if (!trees.length) return;
+      let next = pagesRef.current;
+      for (const tree of trees) {
+        next = mergeLayers(next, activePageRef.current, tree.layers, tree.rootId);
+      }
+      commit(next);
+      setSelectedLayerIds(trees.map((tree) => tree.rootId));
+    };
+
     return {
       addVideoLayer: (media, size) => {
         const page = pageSizeOf(pagesRef.current[activePageRef.current]);
@@ -1936,6 +2020,7 @@ export const Editor = ({
         }),
       addLayer: (layer) => addSingle(layer.type.resolvedName, layer.props),
       addLayerTree: addTree,
+      addLayerTrees: addTrees,
       startDragNDrop: (payload) => addTree(payload.data),
       setPage: (index, page) => {
         const next = clonePages(pagesRef.current);
@@ -2250,7 +2335,12 @@ export const useSelectedLayers = () => {
 export const DesignFrame = ({ data }: { data?: SerializedPage[] }) => {
   const { pages, activePage, scale, actions } = useEditor();
   const ctx = useContext(EditorContext);
+  const scaleCtx = useContext(EditorScaleContext);
   const bootstrapped = useRef(false);
+  // Layer clipboard. Stored as serialized trees; re-keyed on every paste so the
+  // same entry can be pasted repeatedly without id collisions.
+  const clipboard = useRef<SerializedLayerTree[]>([]);
+  const pasteCount = useRef(0);
 
   useEffect(() => {
     if (bootstrapped.current) return;
@@ -2260,16 +2350,37 @@ export const DesignFrame = ({ data }: { data?: SerializedPage[] }) => {
     }
   }, [actions, data, pages.length]);
 
+  const pasteTrees = useCallback(
+    (trees: SerializedLayerTree[]) => {
+      // Cascade successive pastes so copies never land exactly on the original.
+      const offset = 16 * (pasteCount.current + 1);
+      pasteCount.current += 1;
+      actions.addLayerTrees(
+        trees.map((tree) => remapLayerTree(tree, offset, offset)),
+      );
+    },
+    [actions],
+  );
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
+      const mod = event.metaKey || event.ctrlKey;
+      const key = event.key;
+
+      if (mod && key.toLowerCase() === 's') {
         event.preventDefault();
         actions.saveDesign();
         return;
       }
 
-      const isDeleteKey = event.key === 'Delete' || event.key === 'Backspace';
-      if (!isDeleteKey) return;
+      // Escape leaves text editing / clears the selection, so it must work
+      // even while typing.
+      if (key === 'Escape') {
+        if (ctx?.editingLayerId) actions.setEditingLayer(null);
+        if (ctx?.selectedCell) actions.setSelectedCell(null);
+        if (ctx?.selectedLayerIds.length) actions.selectLayers([]);
+        return;
+      }
 
       const target = event.target as HTMLElement | null;
       const tag = target?.tagName?.toLowerCase();
@@ -2281,14 +2392,151 @@ export const DesignFrame = ({ data }: { data?: SerializedPage[] }) => {
       if (typing) return;
 
       const selected = ctx?.selectedLayerIds ?? [];
-      if (!selected.length) return;
+      const page = pages[activePage];
 
-      event.preventDefault();
-      actions.deleteLayers(selected);
+      if (mod) {
+        const lower = key.toLowerCase();
+
+        // Undo / redo.
+        if (lower === 'z') {
+          event.preventDefault();
+          if (event.shiftKey) actions.history.redo();
+          else actions.history.undo();
+          return;
+        }
+        if (lower === 'y') {
+          event.preventDefault();
+          actions.history.redo();
+          return;
+        }
+
+        // Select every top-level layer on the active page.
+        if (lower === 'a') {
+          event.preventDefault();
+          actions.selectLayers([...(page?.layers?.ROOT?.child ?? [])]);
+          return;
+        }
+
+        // Copy / cut / duplicate.
+        if (lower === 'c' || lower === 'x' || lower === 'd') {
+          if (!page || !selected.length) return;
+          const trees = selected
+            .map((id) => copyLayerTree(page.layers, id))
+            .filter((tree): tree is SerializedLayerTree => Boolean(tree));
+          if (!trees.length) return;
+          event.preventDefault();
+
+          if (lower === 'd') {
+            // Duplicate in place, leaving the clipboard untouched.
+            pasteTrees(trees);
+            return;
+          }
+
+          clipboard.current = trees;
+          pasteCount.current = 0;
+          if (lower === 'x') actions.deleteLayers(selected);
+          return;
+        }
+
+        if (lower === 'v') {
+          if (!clipboard.current.length || !page) return;
+          event.preventDefault();
+          pasteTrees(clipboard.current);
+          return;
+        }
+
+        // Zoom, matching the -/+ controls in the footer.
+        if (key === '=' || key === '+') {
+          event.preventDefault();
+          scaleCtx?.setScale(Math.min(2, scale + 0.05));
+          return;
+        }
+        if (key === '-' || key === '_') {
+          event.preventDefault();
+          scaleCtx?.setScale(Math.max(0.1, scale - 0.05));
+          return;
+        }
+        if (key === '0') {
+          event.preventDefault();
+          scaleCtx?.setScale(1);
+          return;
+        }
+
+        return;
+      }
+
+      if (key === 'Delete' || key === 'Backspace') {
+        if (!selected.length) return;
+        event.preventDefault();
+        actions.deleteLayers(selected);
+        return;
+      }
+
+      // Arrow keys nudge by 1px, or 10px with Shift.
+      const arrows: Record<string, Point> = {
+        ArrowLeft: { x: -1, y: 0 },
+        ArrowRight: { x: 1, y: 0 },
+        ArrowUp: { x: 0, y: -1 },
+        ArrowDown: { x: 0, y: 1 },
+      };
+      const nudge = arrows[key];
+      if (nudge && selected.length && page) {
+        event.preventDefault();
+        const distance = event.shiftKey ? 10 : 1;
+        const next = clonePages([page])[0];
+        for (const id of selected) {
+          const layer = next.layers[id];
+          if (!layer) continue;
+          const position = (layer.props.position ?? { x: 0, y: 0 }) as Point;
+          layer.props = {
+            ...layer.props,
+            position: {
+              x: position.x + nudge.x * distance,
+              y: position.y + nudge.y * distance,
+            },
+          };
+        }
+        actions.setPage(activePage, next);
+        return;
+      }
+
+      // [ / ] restack the selection by one slot.
+      if ((key === '[' || key === ']') && selected.length && page) {
+        event.preventDefault();
+        const forward = key === ']';
+        const next = clonePages([page])[0];
+
+        // Siblings must move in order of travel, or they leapfrog each other.
+        const slots = selected
+          .map((id) => {
+            const layer = next.layers[id];
+            if (!layer) return null;
+            const parentId =
+              layer.parent && next.layers[layer.parent] ? layer.parent : 'ROOT';
+            const index = next.layers[parentId]?.child.indexOf(id) ?? -1;
+            return index < 0 ? null : { id, parentId, index };
+          })
+          .filter((slot): slot is { id: string; parentId: string; index: number } =>
+            Boolean(slot),
+          );
+        const sharedParent =
+          slots.length > 0 && slots.every((s) => s.parentId === slots[0].parentId);
+        const order = sharedParent
+          ? [...slots]
+              .sort((a, b) => (forward ? b.index - a.index : a.index - b.index))
+              .map((slot) => slot.id)
+          : selected;
+
+        let moved = false;
+        for (const id of order) {
+          if (moveLayerInParent(next.layers, id, forward)) moved = true;
+        }
+        if (moved) actions.setPage(activePage, next);
+      }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [actions, ctx?.editingLayerId, ctx?.selectedLayerIds]);
+  }, [actions, activePage, ctx, pages, pasteTrees, scale, scaleCtx]);
 
   const rendered = pages.length ? pages : (data ?? []);
   const page = rendered[activePage] ?? rendered[0];
