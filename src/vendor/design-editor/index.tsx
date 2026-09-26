@@ -61,6 +61,10 @@ type ResizeCorner = 'nw' | 'ne' | 'sw' | 'se';
 /** One alignment guide, in page coordinates. `x` is vertical, `y` horizontal. */
 type SnapGuide = { axis: 'x' | 'y'; position: number };
 
+/** `middle` is the vertical centre, to match `centre` being the horizontal one. */
+type AlignKind = 'left' | 'centre' | 'right' | 'top' | 'middle' | 'bottom';
+type DistributeAxis = 'horizontal' | 'vertical';
+
 type EditorState = {
   pages: SerializedPage[];
   activePage: number;
@@ -129,6 +133,13 @@ type EditorActions = {
   beginInteraction: () => void;
   /** Close the snapshot opened by `beginInteraction`. */
   endInteraction: () => void;
+  /**
+   * Align layers to the selection's own bounds, or to the page when only one
+   * layer is selected.
+   */
+  alignLayers: (ids: string[], kind: AlignKind) => void;
+  /** Even out the gaps between three or more layers, keeping the extremes put. */
+  distributeLayers: (ids: string[], axis: DistributeAxis) => void;
   setEditingLayer: (id: string | null) => void;
   goToPage: (index: number) => void;
   addPage: () => void;
@@ -586,6 +597,30 @@ const computeSnap = (
     },
     guides,
   };
+};
+
+/** A layer's position and size in page units. */
+type LayerBox = { id: string; x: number; y: number; width: number; height: number };
+
+/** Boxes for the given layer ids, skipping ids that are gone or have no size. */
+const layerBoxes = (
+  pages: SerializedPage[],
+  activePage: number,
+  ids: string[],
+): LayerBox[] => {
+  const layers = pages[activePage]?.layers;
+  if (!layers) return [];
+  const boxes: LayerBox[] = [];
+  for (const id of ids) {
+    const props = layers[id]?.props as
+      | { position?: Point; boxSize?: PageSize }
+      | undefined;
+    const p = props?.position;
+    const box = props?.boxSize;
+    if (!p || !box?.width || !box?.height) continue;
+    boxes.push({ id, x: p.x, y: p.y, width: box.width, height: box.height });
+  }
+  return boxes;
 };
 
 /** Move one layer a single slot up (`forward`) or down its parent's child list. */
@@ -2189,6 +2224,78 @@ export const Editor = ({
         past.current.push(before);
         future.current = [];
       },
+      alignLayers: (ids, kind) => {
+        const boxes = layerBoxes(pagesRef.current, activePageRef.current, ids);
+        if (!boxes.length) return;
+        // One layer means "align to page", more than one means "align to selection".
+        const pageSize = pageSizeOf(pagesRef.current[activePageRef.current]);
+        const frame =
+          boxes.length > 1
+            ? {
+                x: Math.min(...boxes.map((b) => b.x)),
+                y: Math.min(...boxes.map((b) => b.y)),
+                width:
+                  Math.max(...boxes.map((b) => b.x + b.width)) -
+                  Math.min(...boxes.map((b) => b.x)),
+                height:
+                  Math.max(...boxes.map((b) => b.y + b.height)) -
+                  Math.min(...boxes.map((b) => b.y)),
+              }
+            : { x: 0, y: 0, width: pageSize.width, height: pageSize.height };
+
+        const next = clonePages(pagesRef.current);
+        const layers = next[activePageRef.current]?.layers;
+        if (!layers) return;
+        for (const box of boxes) {
+          const layer = layers[box.id];
+          if (!layer) continue;
+          let { x, y } = box;
+          if (kind === 'left') x = frame.x;
+          else if (kind === 'centre') x = frame.x + (frame.width - box.width) / 2;
+          else if (kind === 'right') x = frame.x + frame.width - box.width;
+          else if (kind === 'top') y = frame.y;
+          else if (kind === 'middle') y = frame.y + (frame.height - box.height) / 2;
+          else y = frame.y + frame.height - box.height;
+          layer.props = { ...layer.props, position: { x, y } };
+        }
+        commit(next);
+      },
+      distributeLayers: (ids, axis) => {
+        const boxes = layerBoxes(pagesRef.current, activePageRef.current, ids);
+        // Two layers have no gap to even out; the extremes stay where they are.
+        if (boxes.length < 3) return;
+        const horizontal = axis === 'horizontal';
+        const sorted = [...boxes].sort((a, b) =>
+          horizontal ? a.x - b.x : a.y - b.y,
+        );
+        const size = (b: LayerBox) => (horizontal ? b.width : b.height);
+        const first = sorted[0];
+        const last = sorted[sorted.length - 1];
+        const start = horizontal ? first.x : first.y;
+        const end = horizontal ? last.x + last.width : last.y + last.height;
+        const gap =
+          (end - start - sorted.reduce((sum, b) => sum + size(b), 0)) /
+          (sorted.length - 1);
+
+        const next = clonePages(pagesRef.current);
+        const layers = next[activePageRef.current]?.layers;
+        if (!layers) return;
+        let cursor = start;
+        for (const box of sorted) {
+          const layer = layers[box.id];
+          if (layer) {
+            layer.props = {
+              ...layer.props,
+              position: {
+                x: horizontal ? cursor : box.x,
+                y: horizontal ? box.y : cursor,
+              },
+            };
+          }
+          cursor += size(box) + gap;
+        }
+        commit(next);
+      },
       setEditingLayer: (id) => {
         if (!id) {
           flushTextDraft();
@@ -2750,6 +2857,237 @@ export const DesignFrame = ({ data }: { data?: SerializedPage[] }) => {
       <CellToolbar />
       <QrToolbar />
       <DrawToolbar />
+      <AlignToolbar />
+    </div>
+  );
+};
+
+/** 16×16 pictogram for one align or distribute command. */
+const AlignIcon = ({
+  kind,
+}: {
+  kind: AlignKind | 'distributeHorizontal' | 'distributeVertical';
+}) => {
+  const bar = { fill: 'currentColor', opacity: 0.45, rx: 1 } as const;
+  let content: ReactNode;
+
+  if (kind === 'distributeHorizontal' || kind === 'distributeVertical') {
+    const vertical = kind === 'distributeHorizontal';
+    content = [2, 6.75, 11.5].map((offset, index) =>
+      vertical ? (
+        <rect key={index} x={offset} y="3" width="2.5" height="10" {...bar} />
+      ) : (
+        <rect key={index} x="3" y={offset} width="10" height="2.5" {...bar} />
+      ),
+    );
+  } else if (kind === 'left' || kind === 'centre' || kind === 'right') {
+    const guide = kind === 'left' ? 1.5 : kind === 'centre' ? 8 : 14.5;
+    const barX = (width: number) =>
+      kind === 'left'
+        ? guide + 2
+        : kind === 'centre'
+          ? guide - width / 2
+          : guide - 2 - width;
+    content = (
+      <>
+        <rect x={guide} y="1" width="1" height="14" fill="currentColor" rx="0.5" />
+        <rect x={barX(9)} y="3" width="9" height="4" {...bar} />
+        <rect x={barX(6)} y="9" width="6" height="4" {...bar} />
+      </>
+    );
+  } else {
+    const guide = kind === 'top' ? 1.5 : kind === 'middle' ? 8 : 14.5;
+    const barY = (height: number) =>
+      kind === 'top'
+        ? guide + 2
+        : kind === 'middle'
+          ? guide - height / 2
+          : guide - 2 - height;
+    content = (
+      <>
+        <rect x="1" y={guide} width="14" height="1" fill="currentColor" rx="0.5" />
+        <rect x="3" y={barY(9)} width="4" height="9" {...bar} />
+        <rect x="9" y={barY(6)} width="4" height="6" {...bar} />
+      </>
+    );
+  }
+
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+      {content}
+    </svg>
+  );
+};
+
+const ALIGN_COMMANDS: { kind: AlignKind; label: string }[] = [
+  { kind: 'left', label: 'Align left' },
+  { kind: 'centre', label: 'Align horizontal centres' },
+  { kind: 'right', label: 'Align right' },
+  { kind: 'top', label: 'Align top' },
+  { kind: 'middle', label: 'Align vertical centres' },
+  { kind: 'bottom', label: 'Align bottom' },
+];
+
+const DISTRIBUTE_COMMANDS: { axis: DistributeAxis; label: string }[] = [
+  { axis: 'horizontal', label: 'Space evenly horizontally' },
+  { axis: 'vertical', label: 'Space evenly vertically' },
+];
+
+/**
+ * Floating align/distribute bar, anchored above the current selection.
+ *
+ * Sits 48px above the anchor rather than 12px so it stacks clear of the Draw and
+ * QR toolbars, which occupy the space directly above a layer.
+ */
+const AlignToolbar = () => {
+  const ctx = useContext(EditorContext);
+  const scaleCtx = useContext(EditorScaleContext);
+  const [anchor, setAnchor] = useState<{ top: number; left: number } | null>(null);
+
+  const selectedIds = ctx?.selectedLayerIds ?? [];
+  const page = ctx ? ctx.pages[ctx.activePage] : undefined;
+  const scale = scaleCtx?.scale ?? ctx?.scale ?? 1;
+  const hidden = !!ctx?.editingLayerId || !!ctx?.selectedCell;
+
+  // Union of the selected layers, in page units.
+  const bounds = useMemo(() => {
+    if (!page || !selectedIds.length) return null;
+    const boxes = selectedIds
+      .map((id) => {
+        const props = page.layers[id]?.props as
+          | { position?: Point; boxSize?: PageSize }
+          | undefined;
+        const p = props?.position;
+        const box = props?.boxSize;
+        if (!p || !box?.width || !box?.height) return null;
+        return { x: p.x, y: p.y, w: box.width, h: box.height };
+      })
+      .filter((box): box is { x: number; y: number; w: number; h: number } =>
+        Boolean(box),
+      );
+    if (!boxes.length) return null;
+    const left = Math.min(...boxes.map((box) => box.x));
+    const top = Math.min(...boxes.map((box) => box.y));
+    return {
+      left,
+      top,
+      width: Math.max(...boxes.map((box) => box.x + box.w)) - left,
+    };
+  }, [page, selectedIds]);
+
+  useEffect(() => {
+    if (!bounds || hidden) {
+      setAnchor(null);
+      return;
+    }
+    const pageIndex = ctx?.activePage ?? 0;
+    let frame = 0;
+    let last = '';
+    // Page coordinates → screen, re-measured each frame so scrolling and zooming
+    // keep the bar glued to the selection.
+    const tick = () => {
+      const node = document.getElementById(`lidojs-page-${pageIndex}`);
+      const rect = node?.getBoundingClientRect();
+      const key = rect
+        ? `${Math.round(rect.top)}:${Math.round(rect.left)}:${Math.round(scale * 1000)}`
+        : '';
+      if (key !== last) {
+        last = key;
+        setAnchor(
+          rect
+            ? {
+                top: rect.top + bounds.top * scale,
+                left: rect.left + (bounds.left + bounds.width / 2) * scale,
+              }
+            : null,
+        );
+      }
+      frame = window.requestAnimationFrame(tick);
+    };
+    frame = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(frame);
+  }, [bounds, ctx?.activePage, hidden, scale]);
+
+  if (!ctx || !bounds || !anchor) return null;
+
+  const ids = [...selectedIds];
+  // Distribute needs three layers before it means anything.
+  const canDistribute = ids.length >= 3;
+  const buttonCss = {
+    width: 26,
+    height: 26,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    border: 'none',
+    background: 'transparent',
+    borderRadius: 6,
+    color: 'var(--app-text-strong)',
+    ':hover': { background: 'var(--app-surface)' },
+  } as const;
+
+  return (
+    <div
+      css={{
+        position: 'fixed',
+        top: anchor.top,
+        left: anchor.left,
+        transform: 'translate(-50%, calc(-100% - 48px))',
+        zIndex: 55,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 2,
+        padding: 4,
+        borderRadius: 10,
+        border: '1px solid var(--app-border)',
+        background: 'var(--app-panel)',
+        boxShadow: '0 10px 30px rgba(0,0,0,.35)',
+      }}
+      onPointerDown={(event) => event.stopPropagation()}
+    >
+      {ALIGN_COMMANDS.map(({ kind, label }) => (
+        <button
+          key={kind}
+          type="button"
+          title={label}
+          aria-label={label}
+          css={{ ...buttonCss, cursor: 'pointer' }}
+          onClick={() => ctx.actions.alignLayers(ids, kind)}
+        >
+          <AlignIcon kind={kind} />
+        </button>
+      ))}
+      <span
+        css={{
+          width: 1,
+          height: 18,
+          margin: '0 2px',
+          background: 'var(--app-border)',
+        }}
+      />
+      {DISTRIBUTE_COMMANDS.map(({ axis, label }) => (
+        <button
+          key={axis}
+          type="button"
+          title={label}
+          aria-label={label}
+          disabled={!canDistribute}
+          css={{
+            ...buttonCss,
+            cursor: canDistribute ? 'pointer' : 'default',
+            opacity: canDistribute ? 1 : 0.4,
+          }}
+          onClick={() => ctx.actions.distributeLayers(ids, axis)}
+        >
+          <AlignIcon
+            kind={
+              axis === 'horizontal'
+                ? 'distributeHorizontal'
+                : 'distributeVertical'
+            }
+          />
+        </button>
+      ))}
     </div>
   );
 };
