@@ -18,7 +18,7 @@ import {
   exportDesign,
   type ExportFormat,
 } from '../../../../utils/exportDesign';
-import { useAppTheme } from '../../../../shared/theme';
+import { ThemeToggle, useAppTheme } from '../../../../shared/theme';
 
 interface HeaderLayoutProps {
   openPreview: () => void;
@@ -760,26 +760,7 @@ const EditorHeaderForwardRef: ForwardRefRenderFunction<
             </div>
           )}
         </div>
-        <div
-          css={{
-            cursor: 'pointer',
-            color: '#fff',
-            fontWeight: 700,
-            background: '#3a3a4c',
-            padding: '8px 14px',
-            borderRadius: 8,
-            ':hover': {
-              background: 'rgba(58,58,76,0.5)',
-            },
-            '@media (max-width: 900px)': {
-              display: 'none',
-            },
-          }}
-          onClick={toggleMode}
-          title={mode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-        >
-          {mode === 'dark' ? 'Light' : 'Dark'}
-        </div>
+        <ThemeToggle />
         <div
           css={{
             cursor: 'pointer',

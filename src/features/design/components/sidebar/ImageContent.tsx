@@ -61,10 +61,12 @@ export const ImageContent: FC<{ onClose: () => void }> = ({ onClose }) => {
         return prevState;
       });
     } else {
-      setImages(response.data);
+      // A failed or missing endpoint can answer with HTML (SPA fallback), so
+      // never assume the payload is the array we asked for.
+      setImages(Array.isArray(response.data) ? response.data : []);
     }
     setIsLoading(false);
-    if (response.data.length > 0) {
+    if (Array.isArray(response.data) && response.data.length > 0) {
       dataRef.current = false;
     }
   });

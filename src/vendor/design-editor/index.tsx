@@ -29,8 +29,10 @@ import {
   openDesignInLibrary,
   renameDesignInLibrary,
   saveActiveDesignPages,
+  setDesignThumbnail,
   type DesignSummary,
 } from '../../utils/designLibrary';
+import { captureThumbnail } from '../../utils/exportDesign';
 
 export type DeepPartial<T> = {
   [P in keyof T]?: T[P] extends object ? DeepPartial<T[P]> : T[P];
@@ -63,6 +65,20 @@ type EditorState = {
   sidebar?: string;
   selectedLayerIds: string[];
   dragNDrop: unknown;
+};
+
+/** Identifies one cell of a TableLayer by its 1-based row/col index. */
+type TableCellRef = {
+  layerId: string;
+  row: number;
+  col: number;
+};
+
+type TableCellPatch = {
+  text?: string;
+  attrs?: Record<string, unknown>;
+  background?: string;
+  marks?: { bold?: boolean; italic?: boolean };
 };
 
 type EditorActions = {
@@ -112,6 +128,15 @@ type EditorActions = {
     box: { position: Point; boxSize: PageSize },
   ) => void;
   updateLayerText: (layerId: string, text: string) => void;
+  /** Patch arbitrary layer props (e.g. a QrCodeLayer's payload and colours). */
+  updateLayerProps: (layerId: string, patch: Record<string, unknown>) => void;
+  setSelectedCell: (cell: TableCellRef | null) => void;
+  updateTableCell: (
+    layerId: string,
+    row: number,
+    col: number,
+    patch: TableCellPatch,
+  ) => void;
   registerTextInput: (el: HTMLTextAreaElement | null) => void;
   deleteLayers: (ids?: string[]) => void;
   saveDesign: () => void;
@@ -143,6 +168,7 @@ type EditorContextValue = EditorState & {
   actions: EditorActions;
   query: EditorQuery;
   editingLayerId: string | null;
+  selectedCell: TableCellRef | null;
   currentDesign: DesignSummary | null;
   designs: DesignSummary[];
 };
@@ -751,53 +777,24 @@ const LayerView = ({
             boxSizing: 'border-box',
             overflow: 'hidden',
             background: '#fff',
-            pointerEvents: 'none',
+            // Cells only accept input once the table is selected, so the first
+            // click still selects — and can drag — the whole layer.
+            pointerEvents: selected ? 'auto' : 'none',
           }}
         >
           {rows.flatMap((row) =>
             cols.map((col) => {
               const cell = cellMap.get(`${row.index}:${col.index}`);
-              const doc = cell?.value as
-                | { content?: { attrs?: Record<string, unknown> }[] }
-                | undefined;
-              const attrs = doc?.content?.[0]?.attrs ?? {};
-              const align = String(attrs.textAlign ?? 'center');
               return (
-                <div
+                <TableCellView
                   key={`${row.index}-${col.index}`}
-                  style={{
-                    background: cell?.background ?? '#fff',
-                    borderTop: borderCss(cell?.border?.top),
-                    borderRight: borderCss(cell?.border?.right),
-                    borderBottom: borderCss(cell?.border?.bottom),
-                    borderLeft: borderCss(cell?.border?.left),
-                    padding,
-                    boxSizing: 'border-box',
-                    overflow: 'hidden',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent:
-                      align === 'left'
-                        ? 'flex-start'
-                        : align === 'right'
-                          ? 'flex-end'
-                          : 'center',
-                    color: String(attrs.color ?? '#333'),
-                    fontFamily: String(
-                      attrs.fontFamily ?? 'Nunito, sans-serif',
-                    ),
-                    fontSize: String(attrs.fontSize ?? '14px'),
-                    lineHeight: Number(attrs.lineHeight ?? 1.4),
-                    textTransform: String(
-                      attrs.textTransform ?? '',
-                    ) as CSSProperties['textTransform'],
-                    textAlign: align as CSSProperties['textAlign'],
-                    whiteSpace: 'pre-wrap',
-                    wordBreak: 'break-word',
-                  }}
-                >
-                  {extractText(cell?.value)}
-                </div>
+                  layerId={layerId}
+                  row={row.index}
+                  col={col.index}
+                  cell={cell}
+                  padding={padding}
+                  borderCss={borderCss}
+                />
               );
             }),
           )}
@@ -868,6 +865,12 @@ const LayerView = ({
 
   return (
     <div
+      data-qr-anchor={selected && name === 'QrCodeLayer' ? 'true' : undefined}
+      data-draw-anchor={
+        selected && name === 'SvgLayer' && parseDrawSvg(props.image)
+          ? 'true'
+          : undefined
+      }
       style={frameStyle}
       onPointerDown={(e) => startInteraction('move', e)}
       onDoubleClick={(e) => {
@@ -892,6 +895,703 @@ const LayerView = ({
   );
 };
 
+type TableBorderShape = {
+  width?: number;
+  color?: string;
+  style?: string;
+};
+
+type TableCellShape = {
+  row: number;
+  col: number;
+  background?: string;
+  border?: {
+    top?: TableBorderShape;
+    right?: TableBorderShape;
+    bottom?: TableBorderShape;
+    left?: TableBorderShape;
+  };
+  value?: unknown;
+};
+
+type TextBlock = {
+  attrs?: Record<string, unknown>;
+  content?: { marks?: { type?: string }[] }[];
+};
+
+const cellBlock = (value: unknown): TextBlock | undefined =>
+  (value as { content?: TextBlock[] } | undefined)?.content?.[0];
+
+/**
+ * A single table cell.
+ *
+ * Inert until its table is selected, so the first click still selects (and can
+ * drag) the whole layer. Once selected, a click picks the cell and a
+ * double-click opens the inline text editor.
+ */
+const TableCellView = ({
+  layerId,
+  row,
+  col,
+  cell,
+  padding,
+  borderCss,
+}: {
+  layerId: string;
+  row: number;
+  col: number;
+  cell?: TableCellShape;
+  padding: number;
+  borderCss: (side?: TableBorderShape) => string;
+}) => {
+  const ctx = useContext(EditorContext);
+  const draftRef = useRef<HTMLTextAreaElement | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [draft, setDraft] = useState('');
+
+  const layerSelected = !!ctx?.selectedLayerIds.includes(layerId);
+  const active =
+    !!ctx?.selectedCell &&
+    ctx.selectedCell.layerId === layerId &&
+    ctx.selectedCell.row === row &&
+    ctx.selectedCell.col === col;
+
+  const block = cellBlock(cell?.value);
+  const attrs = block?.attrs ?? {};
+  const marks = (block?.content ?? []).flatMap((node) =>
+    Array.isArray(node.marks) ? node.marks : [],
+  );
+  const bold = marks.some((mark) => mark?.type === 'bold');
+  const italic = marks.some((mark) => mark?.type === 'italic');
+  const align = String(attrs.textAlign ?? 'center');
+  const text = extractText(cell?.value);
+
+  useEffect(() => {
+    if (!editorOpen) return;
+    const id = window.requestAnimationFrame(() => {
+      draftRef.current?.focus();
+      draftRef.current?.select();
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, [editorOpen]);
+
+  // Leave edit mode if this stops being the active cell.
+  useEffect(() => {
+    if (!active && editorOpen) setEditorOpen(false);
+  }, [active, editorOpen]);
+
+  const commitText = () => {
+    setEditorOpen(false);
+    if (!ctx) return;
+    ctx.actions.updateTableCell(layerId, row, col, { text: draft });
+  };
+
+  const openEditor = () => {
+    setDraft(text);
+    setEditorOpen(true);
+  };
+
+  return (
+    <div
+      data-selected-cell={active ? 'true' : undefined}
+      style={{
+        position: 'relative',
+        background: cell?.background ?? '#fff',
+        borderTop: borderCss(cell?.border?.top),
+        borderRight: borderCss(cell?.border?.right),
+        borderBottom: borderCss(cell?.border?.bottom),
+        borderLeft: borderCss(cell?.border?.left),
+        padding,
+        boxSizing: 'border-box',
+        overflow: 'hidden',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent:
+          align === 'left'
+            ? 'flex-start'
+            : align === 'right'
+              ? 'flex-end'
+              : 'center',
+        color: String(attrs.color ?? '#333'),
+        fontFamily: String(attrs.fontFamily ?? 'Nunito, sans-serif'),
+        fontSize: String(attrs.fontSize ?? '14px'),
+        lineHeight: Number(attrs.lineHeight ?? 1.4),
+        fontWeight: bold ? 700 : 400,
+        fontStyle: italic ? 'italic' : 'normal',
+        textTransform: String(
+          attrs.textTransform ?? '',
+        ) as CSSProperties['textTransform'],
+        textAlign: align as CSSProperties['textAlign'],
+        whiteSpace: 'pre-wrap',
+        wordBreak: 'break-word',
+        outline: active ? '2px solid #3d8eff' : undefined,
+        outlineOffset: active ? '-2px' : undefined,
+        cursor: layerSelected ? 'text' : 'default',
+      }}
+      onPointerDown={(event) => {
+        if (!ctx || !layerSelected) return;
+        event.stopPropagation();
+        event.preventDefault();
+        ctx.actions.setSelectedCell({ layerId, row, col });
+      }}
+      onDoubleClick={(event) => {
+        if (!ctx || !layerSelected) return;
+        event.stopPropagation();
+        event.preventDefault();
+        openEditor();
+      }}
+    >
+      {editorOpen ? (
+        <textarea
+          ref={draftRef}
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={commitText}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && !event.shiftKey) {
+              event.preventDefault();
+              commitText();
+            }
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              setEditorOpen(false);
+            }
+          }}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            width: '100%',
+            height: '100%',
+            border: 'none',
+            outline: 'none',
+            resize: 'none',
+            background: 'transparent',
+            color: 'inherit',
+            font: 'inherit',
+            textAlign: 'inherit',
+            padding,
+            boxSizing: 'border-box',
+          }}
+        />
+      ) : (
+        text
+      )}
+    </div>
+  );
+};
+
+/**
+ * `<input type="color">` only accepts `#rrggbb`, but cells store colours as
+ * `rgb(r, g, b)`. Convert so the swatch shows the real colour.
+ */
+const toHexColor = (value: unknown, fallback: string): string => {
+  const raw = String(value ?? '').trim();
+  if (/^#[0-9a-f]{6}$/i.test(raw)) return raw;
+  const match = raw.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
+  if (!match) return fallback;
+  const hex = (part: string) => Number(part).toString(16).padStart(2, '0');
+  return `#${hex(match[1])}${hex(match[2])}${hex(match[3])}`;
+};
+
+const FONT_SIZES = ['12px', '14px', '16px', '18px', '20px', '24px', '28px', '32px', '40px', '48px'];
+
+/**
+ * Floating formatting toolbar for the selected table cell.
+ *
+ * Positioned `fixed` from the cell's live bounding rect, so it is never
+ * clipped by the artboard's `overflow: hidden`.
+ */
+const CellToolbar = () => {
+  const ctx = useContext(EditorContext);
+  const cell = ctx?.selectedCell ?? null;
+  const [anchor, setAnchor] = useState<{ top: number; left: number } | null>(null);
+
+  useEffect(() => {
+    if (!cell) {
+      setAnchor(null);
+      return;
+    }
+    let frame = 0;
+    let last = '';
+    const tick = () => {
+      const node = document.querySelector('[data-selected-cell="true"]');
+      const rect = node?.getBoundingClientRect();
+      const key = rect
+        ? `${Math.round(rect.top)}:${Math.round(rect.left)}:${Math.round(rect.width)}`
+        : '';
+      if (key !== last) {
+        last = key;
+        setAnchor(
+          rect
+            ? { top: rect.top, left: rect.left + rect.width / 2 }
+            : null,
+        );
+      }
+      frame = window.requestAnimationFrame(tick);
+    };
+    frame = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(frame);
+  }, [cell]);
+
+  if (!ctx || !cell || !anchor) return null;
+
+  const page = ctx.pages[ctx.activePage];
+  const layer = page?.layers?.[cell.layerId];
+  const rawCells = (layer?.props as Record<string, unknown> | undefined)?.cells;
+  const cells = Array.isArray(rawCells) ? (rawCells as TableCellShape[]) : [];
+  const target = cells.find(
+    (entry) => entry.row === cell.row && entry.col === cell.col,
+  );
+  const block = cellBlock(target?.value);
+  const attrs = block?.attrs ?? {};
+  const marks = (block?.content ?? []).flatMap((node) =>
+    Array.isArray(node.marks) ? node.marks : [],
+  );
+  const bold = marks.some((mark) => mark?.type === 'bold');
+  const italic = marks.some((mark) => mark?.type === 'italic');
+  const align = String(attrs.textAlign ?? 'center');
+
+  // Keep the dropdown truthful when a cell carries a size we don't preset.
+  const currentSize = String(attrs.fontSize ?? '14px');
+  const sizeOptions = FONT_SIZES.includes(currentSize)
+    ? FONT_SIZES
+    : [...FONT_SIZES, currentSize].sort(
+        (a, b) => parseFloat(a) - parseFloat(b),
+      );
+
+  const update = (patch: TableCellPatch) =>
+    ctx.actions.updateTableCell(cell.layerId, cell.row, cell.col, patch);
+
+  const buttonCss = (isActive: boolean) => ({
+    minWidth: 30,
+    height: 28,
+    padding: '0 6px',
+    border: `1px solid ${isActive ? '#3d8eff' : 'var(--app-border)'}`,
+    background: isActive ? 'rgba(61,142,255,.16)' : 'transparent',
+    color: isActive ? '#3d8eff' : 'var(--app-text-strong)',
+    borderRadius: 6,
+    cursor: 'pointer',
+    fontSize: 13,
+    fontWeight: 700,
+    lineHeight: 1,
+  });
+
+  return (
+    <div
+      css={{
+        position: 'fixed',
+        top: anchor.top,
+        left: anchor.left,
+        transform: 'translate(-50%, calc(-100% - 12px))',
+        zIndex: 60,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        padding: 6,
+        borderRadius: 10,
+        border: '1px solid var(--app-border)',
+        background: 'var(--app-panel)',
+        boxShadow: '0 10px 30px rgba(0,0,0,.35)',
+      }}
+      onPointerDown={(event) => event.stopPropagation()}
+    >
+      <button
+        type="button"
+        title="Bold"
+        aria-label="Bold"
+        css={buttonCss(bold)}
+        onClick={() => update({ marks: { bold: !bold } })}
+      >
+        B
+      </button>
+      <button
+        type="button"
+        title="Italic"
+        aria-label="Italic"
+        css={{ ...buttonCss(italic), fontStyle: 'italic' }}
+        onClick={() => update({ marks: { italic: !italic } })}
+      >
+        I
+      </button>
+      <select
+        aria-label="Font size"
+        value={currentSize}
+        onChange={(event) => update({ attrs: { fontSize: event.target.value } })}
+        css={{
+          height: 28,
+          border: '1px solid var(--app-border)',
+          background: 'transparent',
+          color: 'var(--app-text-strong)',
+          borderRadius: 6,
+          fontSize: 12,
+          padding: '0 4px',
+          cursor: 'pointer',
+        }}
+      >
+        {sizeOptions.map((size) => (
+          <option key={size} value={size}>
+            {size.replace('px', '')}
+          </option>
+        ))}
+      </select>
+      <input
+        type="color"
+        title="Text colour"
+        aria-label="Text colour"
+        value={toHexColor(attrs.color, '#333333')}
+        onChange={(event) => update({ attrs: { color: event.target.value } })}
+        css={{ width: 28, height: 28, padding: 0, border: '1px solid var(--app-border)', borderRadius: 6, background: 'transparent', cursor: 'pointer' }}
+      />
+      <span css={{ width: 1, height: 18, background: 'var(--app-border)' }} />
+      {(['left', 'center', 'right'] as const).map((value) => (
+        <button
+          key={value}
+          type="button"
+          title={`Align ${value}`}
+          aria-label={`Align ${value}`}
+          css={buttonCss(align === value)}
+          onClick={() => update({ attrs: { textAlign: value } })}
+        >
+          {value === 'left' ? 'L' : value === 'center' ? 'C' : 'R'}
+        </button>
+      ))}
+      <span css={{ width: 1, height: 18, background: 'var(--app-border)' }} />
+      <input
+        type="color"
+        title="Cell background"
+        aria-label="Cell background"
+        value={toHexColor(target?.background, '#ffffff')}
+        onChange={(event) => update({ background: event.target.value })}
+        css={{ width: 28, height: 28, padding: 0, border: '1px solid var(--app-border)', borderRadius: 6, background: 'transparent', cursor: 'pointer' }}
+      />
+    </div>
+  );
+};
+
+/**
+ * Floating editor for the selected QR code.
+ *
+ * Same anchoring approach as `CellToolbar`: it reads the selected layer's live
+ * bounding rect each frame, so it follows the layer and the zoom with no
+ * coordinate maths of its own.
+ */
+const QrToolbar = () => {
+  const ctx = useContext(EditorContext);
+  const [anchor, setAnchor] = useState<{ top: number; left: number } | null>(null);
+  const [draft, setDraft] = useState('');
+  const logoInputRef = useRef<HTMLInputElement | null>(null);
+
+  const selectedIds = ctx?.selectedLayerIds ?? [];
+  const qrId = selectedIds.length === 1 ? selectedIds[0] : null;
+  const page = ctx ? ctx.pages[ctx.activePage] : undefined;
+  const layer = qrId ? page?.layers?.[qrId] : undefined;
+  const isQr = layer?.type?.resolvedName === 'QrCodeLayer';
+  const props = (layer?.props ?? {}) as Record<string, unknown>;
+
+  useEffect(() => {
+    if (!isQr) {
+      setAnchor(null);
+      return;
+    }
+    let frame = 0;
+    let last = '';
+    const tick = () => {
+      const node = document.querySelector('[data-qr-anchor="true"]');
+      const rect = node?.getBoundingClientRect();
+      const key = rect
+        ? `${Math.round(rect.top)}:${Math.round(rect.left)}:${Math.round(rect.width)}`
+        : '';
+      if (key !== last) {
+        last = key;
+        setAnchor(
+          rect ? { top: rect.top, left: rect.left + rect.width / 2 } : null,
+        );
+      }
+      frame = window.requestAnimationFrame(tick);
+    };
+    frame = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(frame);
+  }, [isQr]);
+
+  // Seed the field when a different QR is selected.
+  const layerText = isQr ? String(props.text ?? '') : '';
+  useEffect(() => {
+    setDraft(layerText);
+  }, [qrId, layerText]);
+
+  if (!ctx || !isQr || !qrId || !anchor) return null;
+
+  const controlCss = {
+    height: 28,
+    border: '1px solid var(--app-border)',
+    background: 'transparent',
+    color: 'var(--app-text-strong)',
+    borderRadius: 6,
+    fontSize: 12,
+  } as const;
+
+  return (
+    <div
+      css={{
+        position: 'fixed',
+        top: anchor.top,
+        left: anchor.left,
+        transform: 'translate(-50%, calc(-100% - 12px))',
+        zIndex: 60,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        padding: 6,
+        borderRadius: 10,
+        border: '1px solid var(--app-border)',
+        background: 'var(--app-panel)',
+        boxShadow: '0 10px 30px rgba(0,0,0,.35)',
+      }}
+      onPointerDown={(event) => event.stopPropagation()}
+    >
+      <input
+        aria-label="QR destination"
+        placeholder="https://example.com"
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={() => ctx.actions.updateLayerProps(qrId, { text: draft.trim() || ' ' })}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            ctx.actions.updateLayerProps(qrId, { text: draft.trim() || ' ' });
+          }
+        }}
+        css={{ ...controlCss, width: 230, padding: '0 8px' }}
+      />
+      <input
+        type="color"
+        aria-label="QR dark colour"
+        title="QR colour"
+        value={toHexColor(props.textColor, '#1e1e2d')}
+        onChange={(event) =>
+          ctx.actions.updateLayerProps(qrId, { textColor: event.target.value })
+        }
+        css={{ ...controlCss, width: 28, padding: 0, cursor: 'pointer' }}
+      />
+      <input
+        type="color"
+        aria-label="QR light colour"
+        title="QR background"
+        value={toHexColor(props.bgColor, '#ffffff')}
+        onChange={(event) =>
+          ctx.actions.updateLayerProps(qrId, { bgColor: event.target.value })
+        }
+        css={{ ...controlCss, width: 28, padding: 0, cursor: 'pointer' }}
+      />
+      <span css={{ width: 1, height: 18, background: 'var(--app-border)' }} />
+      <input
+        ref={logoInputRef}
+        type="file"
+        accept="image/*"
+        aria-label="QR logo file"
+        style={{ display: 'none' }}
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = '';
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = () => {
+            const result =
+              typeof reader.result === 'string' ? reader.result : '';
+            if (result) ctx.actions.updateLayerProps(qrId, { logo: result });
+          };
+          reader.readAsDataURL(file);
+        }}
+      />
+      <button
+        type="button"
+        title="Put your own icon in the middle"
+        onClick={() => logoInputRef.current?.click()}
+        css={{
+          height: 28,
+          padding: '0 10px',
+          border: '1px solid var(--app-border)',
+          background: 'transparent',
+          color: 'var(--app-text-strong)',
+          borderRadius: 6,
+          fontSize: 12,
+          fontWeight: 700,
+          cursor: 'pointer',
+        }}
+      >
+        Logo
+      </button>
+      {props.logo ? (
+        <button
+          type="button"
+          title="Remove the icon"
+          onClick={() => ctx.actions.updateLayerProps(qrId, { logo: '' })}
+          css={{
+            height: 28,
+            padding: '0 10px',
+            border: '1px solid var(--app-border)',
+            background: 'transparent',
+            color: 'var(--app-text-muted)',
+            borderRadius: 6,
+            fontSize: 12,
+            fontWeight: 700,
+            cursor: 'pointer',
+            ':hover': { color: '#ff8f8f', borderColor: '#ff8f8f' },
+          }}
+        >
+          Clear
+        </button>
+      ) : null}
+    </div>
+  );
+};
+
+/**
+ * Freehand drawings are stored as an `SvgLayer` whose `image` is an inline SVG
+ * holding a single stroked `<path>`. Colour and weight therefore live *inside*
+ * that string, so editing either means rebuilding it.
+ */
+const parseDrawSvg = (image: unknown) => {
+  if (typeof image !== 'string' || !image.startsWith('data:image/svg+xml')) {
+    return null;
+  }
+  const svg = image.slice(image.indexOf(',') + 1);
+  const d = /<path d="([^"]*)"/.exec(svg)?.[1];
+  if (!d) return null;
+  return {
+    d,
+    stroke: decodeURIComponent(/stroke="([^"]*)"/.exec(svg)?.[1] ?? '#000000'),
+    strokeWidth: Number(/stroke-width="([^"]*)"/.exec(svg)?.[1] ?? 4) || 4,
+  };
+};
+
+/** Mirrors the shape `addDrawLayer` writes, so a redraw is byte-compatible. */
+const buildDrawSvg = (d: string, stroke: string, strokeWidth: number) =>
+  `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg"><path d="${d}" fill="none" stroke="${encodeURIComponent(
+    stroke,
+  )}" stroke-width="${strokeWidth}" stroke-linecap="round"/></svg>`;
+
+/** Floating editor for a selected freehand drawing: stroke colour and weight. */
+const DrawToolbar = () => {
+  const ctx = useContext(EditorContext);
+  const [anchor, setAnchor] = useState<{ top: number; left: number } | null>(null);
+  const [width, setWidth] = useState('4');
+
+  const selectedIds = ctx?.selectedLayerIds ?? [];
+  const id = selectedIds.length === 1 ? selectedIds[0] : null;
+  const page = ctx ? ctx.pages[ctx.activePage] : undefined;
+  const layer = id ? page?.layers?.[id] : undefined;
+  const props = (layer?.props ?? {}) as Record<string, unknown>;
+  const draw =
+    layer?.type?.resolvedName === 'SvgLayer' ? parseDrawSvg(props.image) : null;
+  const hasDraw = !!draw;
+
+  useEffect(() => {
+    if (!hasDraw) {
+      setAnchor(null);
+      return;
+    }
+    let frame = 0;
+    let last = '';
+    const tick = () => {
+      const node = document.querySelector('[data-draw-anchor="true"]');
+      const rect = node?.getBoundingClientRect();
+      const key = rect
+        ? `${Math.round(rect.top)}:${Math.round(rect.left)}:${Math.round(rect.width)}`
+        : '';
+      if (key !== last) {
+        last = key;
+        setAnchor(
+          rect ? { top: rect.top, left: rect.left + rect.width / 2 } : null,
+        );
+      }
+      frame = window.requestAnimationFrame(tick);
+    };
+    frame = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(frame);
+  }, [hasDraw]);
+
+  const stroke = draw?.stroke ?? '#000000';
+  const strokeWidth = draw?.strokeWidth ?? 4;
+  useEffect(() => {
+    setWidth(String(strokeWidth));
+  }, [id, strokeWidth]);
+
+  if (!ctx || !draw || !id || !anchor) return null;
+
+  const apply = (patch: { stroke?: string; strokeWidth?: number }) => {
+    ctx.actions.updateLayerProps(id, {
+      image: buildDrawSvg(
+        draw.d,
+        patch.stroke ?? stroke,
+        patch.strokeWidth ?? strokeWidth,
+      ),
+    });
+  };
+
+  const controlCss = {
+    height: 28,
+    border: '1px solid var(--app-border)',
+    background: 'transparent',
+    color: 'var(--app-text-strong)',
+    borderRadius: 6,
+    fontSize: 12,
+  } as const;
+
+  const commitWidth = () => {
+    const next = Math.min(80, Math.max(1, Number(width) || strokeWidth));
+    if (next !== strokeWidth) apply({ strokeWidth: next });
+  };
+
+  return (
+    <div
+      css={{
+        position: 'fixed',
+        top: anchor.top,
+        left: anchor.left,
+        transform: 'translate(-50%, calc(-100% - 12px))',
+        zIndex: 60,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        padding: 6,
+        borderRadius: 10,
+        border: '1px solid var(--app-border)',
+        background: 'var(--app-panel)',
+        boxShadow: '0 10px 30px rgba(0,0,0,.35)',
+      }}
+      onPointerDown={(event) => event.stopPropagation()}
+    >
+      <input
+        type="color"
+        aria-label="Stroke colour"
+        title="Stroke colour"
+        value={toHexColor(stroke, '#000000')}
+        onChange={(event) => apply({ stroke: event.target.value })}
+        css={{ ...controlCss, width: 28, padding: 0, cursor: 'pointer' }}
+      />
+      <input
+        type="number"
+        min={1}
+        max={80}
+        aria-label="Stroke width"
+        title="Stroke width"
+        value={width}
+        onChange={(event) => setWidth(event.target.value)}
+        onBlur={commitWidth}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            commitWidth();
+          }
+        }}
+        css={{ ...controlCss, width: 56, padding: '0 6px' }}
+      />
+      <span css={{ fontSize: 11, color: 'var(--app-text-muted)' }}>px</span>
+    </div>
+  );
+};
+
 const PageCanvas = ({ page }: { page?: SerializedPage }) => {
   if (!page?.layers?.ROOT) return null;
   return <LayerView layerId="ROOT" layers={page.layers} />;
@@ -912,6 +1612,7 @@ export const Editor = ({
   const [sidebar, setSidebarState] = useState<string | undefined>();
   const [selectedLayerIds, setSelectedLayerIds] = useState<string[]>([]);
   const [editingLayerId, setEditingLayerId] = useState<string | null>(null);
+  const [selectedCell, setSelectedCell] = useState<TableCellRef | null>(null);
   const [currentDesign, setCurrentDesign] = useState<DesignSummary | null>(
     boot.currentDesign,
   );
@@ -987,6 +1688,21 @@ export const Editor = ({
       setCurrentDesign(summary);
       currentDesignRef.current = summary;
       refreshDesignList();
+
+      // Refresh the gallery preview in the background. Deliberately not
+      // awaited: saving stays synchronous, and a failed capture must never
+      // surface as a failed save.
+      const pageIndex = activePageRef.current;
+      const size = pageSizeOf(pagesRef.current[pageIndex]);
+      if (size) {
+        void captureThumbnail(pageIndex, size)
+          .then((thumbnail) => {
+            if (thumbnail) setDesignThumbnail(saved.id, thumbnail);
+          })
+          .catch(() => {
+            /* a preview is best-effort */
+          });
+      }
     }
     return saved;
   }, [flushTextDraft, refreshDesignList]);
@@ -1022,6 +1738,103 @@ export const Editor = ({
     // Draft only while editing — pages update on flush/commit.
     textDraftRef.current = { id: layerId, text };
   }, []);
+
+  /** Commit a shallow patch onto a layer's props — undoable and saved. */
+  const patchLayerProps = useCallback(
+    (layerId: string, patch: Record<string, unknown>) => {
+      const next = clonePages(pagesRef.current);
+      const page = next[activePageRef.current];
+      const layer = page?.layers?.[layerId];
+      if (!layer) return;
+      layer.props = { ...layer.props, ...patch };
+      commit(next);
+    },
+    [commit],
+  );
+
+  /**
+   * Apply a change to one table cell.
+   *
+   * Committed through `commit`, so cell edits join the undo history and are
+   * saved with the design like any other change.
+   */
+  const patchTableCell = useCallback(
+    (layerId: string, row: number, col: number, patch: TableCellPatch) => {
+      const next = clonePages(pagesRef.current);
+      const page = next[activePageRef.current];
+      const layer = page?.layers?.[layerId];
+      if (!layer) return;
+
+      const props = layer.props as Record<string, unknown>;
+      const cells = Array.isArray(props.cells)
+        ? ([...props.cells] as Record<string, unknown>[])
+        : [];
+      const index = cells.findIndex(
+        (cell) => Number(cell.row) === row && Number(cell.col) === col,
+      );
+      if (index < 0) return;
+
+      const cell: Record<string, unknown> = { ...cells[index] };
+
+      // Text only: rebuild the doc so paragraph attrs are preserved.
+      if (patch.text !== undefined) {
+        cell.value = buildTextDoc(cell.value, patch.text);
+      }
+
+      if (patch.attrs || patch.marks) {
+        type Block = {
+          type?: string;
+          attrs?: Record<string, unknown>;
+          content?: Record<string, unknown>[];
+        };
+        const value = cell.value as { content?: Block[] } | undefined;
+        const content: Block[] = Array.isArray(value?.content)
+          ? value.content.map((block) => ({ ...block }))
+          : [];
+        const block: Block = content[0] ?? { type: 'paragraph', content: [] };
+
+        if (patch.attrs) {
+          block.attrs = { ...(block.attrs ?? {}), ...patch.attrs };
+        }
+
+        if (patch.marks) {
+          const nodes = Array.isArray(block.content) ? block.content : [];
+          block.content = nodes.map((node) => {
+            const marks = Array.isArray(node.marks)
+              ? (node.marks as { type?: string }[]).filter(
+                  (mark) =>
+                    !(patch.marks?.bold !== undefined && mark.type === 'bold') &&
+                    !(patch.marks?.italic !== undefined && mark.type === 'italic'),
+                )
+              : [];
+            if (patch.marks?.bold) marks.push({ type: 'bold' });
+            if (patch.marks?.italic) marks.push({ type: 'italic' });
+            return { ...node, marks };
+          });
+        }
+
+        content[0] = block;
+        cell.value = { ...(value ?? {}), content };
+      }
+
+      if (patch.background !== undefined) {
+        cell.background = patch.background;
+      }
+
+      cells[index] = cell;
+      layer.props = { ...props, cells };
+      commit(next);
+    },
+    [commit],
+  );
+
+  // A cell selection is only meaningful while its owning layer stays selected.
+  useEffect(() => {
+    if (!selectedCell) return;
+    if (!selectedLayerIds.includes(selectedCell.layerId)) {
+      setSelectedCell(null);
+    }
+  }, [selectedCell, selectedLayerIds]);
 
   const actions = useMemo<EditorActions>(() => {
     const addTree = (tree: SerializedLayerTree) => {
@@ -1209,6 +2022,9 @@ export const Editor = ({
       },
       updateLayerBox: patchLayerLive,
       updateLayerText: patchLayerText,
+      updateLayerProps: patchLayerProps,
+      setSelectedCell,
+      updateTableCell: patchTableCell,
       registerTextInput: (el) => {
         activeTextareaRef.current = el;
       },
@@ -1335,6 +2151,8 @@ export const Editor = ({
     loadDesignPages,
     patchLayerLive,
     patchLayerText,
+    patchLayerProps,
+    patchTableCell,
     persistCurrent,
     refreshDesignList,
     selectedLayerIds,
@@ -1364,6 +2182,7 @@ export const Editor = ({
       selectedLayerIds,
       dragNDrop: null,
       editingLayerId,
+      selectedCell,
       currentDesign,
       designs,
       actions,
@@ -1375,6 +2194,7 @@ export const Editor = ({
       currentDesign,
       designs,
       editingLayerId,
+      selectedCell,
       pages,
       query,
       scale,
@@ -1511,6 +2331,9 @@ export const DesignFrame = ({ data }: { data?: SerializedPage[] }) => {
           <PageCanvas page={page} />
         </div>
       </div>
+      <CellToolbar />
+      <QrToolbar />
+      <DrawToolbar />
     </div>
   );
 };

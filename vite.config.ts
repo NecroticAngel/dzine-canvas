@@ -35,6 +35,16 @@ export default defineConfig({
   server: {
     port: 4200,
     host: true,
+    proxy: {
+      // The API runs as a separate process (`npm run api`, default port 4201 —
+      // see api/storagePaths.js). Without this proxy, requests to /api/* hit
+      // Vite's SPA fallback and are answered with index.html: HTML where every
+      // caller expects JSON.
+      '/api': {
+        target: 'http://localhost:4201',
+        changeOrigin: true,
+      },
+    },
   },
   build: {
     sourcemap: true,

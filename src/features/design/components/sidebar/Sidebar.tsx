@@ -40,7 +40,6 @@ const tabs = [
   {
     name: 'Table',
     icon: <TableIcon />,
-    isBusiness: true,
   },
   {
     name: 'Frame',
@@ -57,12 +56,10 @@ const tabs = [
   {
     name: 'QrCode',
     icon: <QrCodeIcon />,
-    isBusiness: true,
   },
   {
     name: 'Draw',
     icon: <PencilIcon />,
-    isBusiness: true,
   },
   // {
   //   name: 'Video',

@@ -74,6 +74,47 @@ const capturePageImage = async (
   });
 };
 
+/**
+ * Small JPEG preview for the design gallery.
+ *
+ * Deliberately cheap — `pixelRatio: 1` and JPEG rather than PNG — because the
+ * result is persisted to localStorage next to the design, where a full-res PNG
+ * would quickly exhaust the quota.
+ */
+export const captureThumbnail = async (
+  pageIndex: number,
+  size: PageSize,
+  targetPx = 420,
+): Promise<string | null> => {
+  try {
+    const scale = Math.min(targetPx / size.width, targetPx / size.height, 1);
+    const width = Math.max(1, Math.round(size.width * scale));
+    const height = Math.max(1, Math.round(size.height * scale));
+    const { root, content } = getPageContent(pageIndex);
+    return await withCleanCapture(root, () =>
+      toJpeg(content, {
+        cacheBust: true,
+        pixelRatio: 1,
+        width,
+        height,
+        canvasWidth: width,
+        canvasHeight: height,
+        quality: 0.72,
+        backgroundColor: '#ffffff',
+        style: {
+          transform: `scale(${scale})`,
+          transformOrigin: 'top left',
+          width: `${size.width}px`,
+          height: `${size.height}px`,
+        },
+      }),
+    );
+  } catch {
+    // A preview must never be able to break saving.
+    return null;
+  }
+};
+
 export const exportDesign = async (options: {
   format: ExportFormat;
   pageIndex: number;

@@ -27,7 +27,9 @@ export const TextContent: FC<{ onClose: () => void }> = ({ onClose }) => {
 
   useAsync(async () => {
     const response = await axios.get<Text[]>('/texts');
-    setTexts(response.data);
+    // A failed or missing endpoint can answer with HTML (SPA fallback), so
+    // never assume the payload is the array we asked for.
+    setTexts(Array.isArray(response.data) ? response.data : []);
     setIsLoading(false);
   }, []);
 

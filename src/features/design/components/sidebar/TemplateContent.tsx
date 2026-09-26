@@ -100,7 +100,7 @@ export const TemplateContent: FC<{ onClose: () => void }> = ({ onClose }) => {
             flexGrow: 1,
             overflowY: 'auto',
             display: 'grid',
-            gridTemplateColumns: 'repeat(2,minmax(0,1fr))',
+            gridTemplateColumns: 'minmax(0,1fr)',
             gridGap: 8,
             padding: '16px',
           }}

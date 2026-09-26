@@ -8,6 +8,8 @@ export type DesignSummary = {
   id: string;
   name: string;
   updatedAt: number;
+  /** Small data-URL preview captured on save; absent for older designs. */
+  thumbnail?: string;
 };
 
 export type SavedDesign = DesignSummary & {
@@ -23,13 +25,23 @@ type LibraryStore = {
 const clonePages = (pages: SerializedPage[]) =>
   JSON.parse(JSON.stringify(pages)) as SerializedPage[];
 
-export const createBlankPages = (): SerializedPage[] => [
+export type PageSize = {
+  width: number;
+  height: number;
+};
+
+/** Fallback canvas size, used when a design is created without picking one. */
+export const DEFAULT_PAGE_SIZE: PageSize = { width: 1640, height: 924 };
+
+export const createBlankPages = (
+  size: PageSize = DEFAULT_PAGE_SIZE,
+): SerializedPage[] => [
   {
     layers: {
       ROOT: {
         type: { resolvedName: 'RootLayer' },
         props: {
-          boxSize: { width: 1640, height: 924 },
+          boxSize: { width: size.width, height: size.height },
           position: { x: 0, y: 0 },
           rotate: 0,
           color: 'rgb(255, 255, 255)',
@@ -129,7 +141,12 @@ export const listDesignSummaries = (): DesignSummary[] => {
   const store = readStore();
   if (!store) return [];
   return store.designs
-    .map(({ id, name, updatedAt }) => ({ id, name, updatedAt }))
+    .map(({ id, name, updatedAt, thumbnail }) => ({
+      id,
+      name,
+      updatedAt,
+      thumbnail,
+    }))
     .sort((a, b) => b.updatedAt - a.updatedAt);
 };
 
@@ -151,6 +168,30 @@ export const saveActiveDesignPages = (pages: SerializedPage[]) => {
   };
   writeStore(store);
   return store.designs[index];
+};
+
+/**
+ * Attach a gallery preview to a saved design.
+ *
+ * Kept separate from `saveActiveDesignPages` because capturing the preview is
+ * asynchronous — saving the document must never wait on it, nor fail with it.
+ */
+export const setDesignThumbnail = (
+  id: string,
+  thumbnail: string,
+): DesignSummary | null => {
+  const store = readStore();
+  if (!store) return null;
+  const design = store.designs.find((d) => d.id === id);
+  if (!design) return null;
+  design.thumbnail = thumbnail;
+  writeStore(store);
+  return {
+    id: design.id,
+    name: design.name,
+    updatedAt: design.updatedAt,
+    thumbnail,
+  };
 };
 
 export const createDesignInLibrary = (

@@ -20,7 +20,9 @@ export const FrameContent: FC<{ onClose: () => void }> = ({ onClose }) => {
   const { actions, query } = useEditor();
   useAsync(async () => {
     const response = await axios.get<Frame[]>('/frames');
-    setFrames(response.data);
+    // A missing or unreachable endpoint can answer with HTML (SPA fallback)
+    // rather than JSON, so never trust the shape of what comes back.
+    setFrames(Array.isArray(response.data) ? response.data : []);
     setIsLoading(false);
   }, []);
   const addFrame = async (data: Frame) => {

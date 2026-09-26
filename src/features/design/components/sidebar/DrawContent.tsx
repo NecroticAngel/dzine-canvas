@@ -107,7 +107,7 @@ export const DrawContent: FC<{ onClose: () => void }> = ({ onClose }) => {
         css={{
           position: 'absolute',
           left: 72,
-          top: 500,
+          top: 44,
           zIndex: 10,
           overflow: 'hidden',
           width: 120,

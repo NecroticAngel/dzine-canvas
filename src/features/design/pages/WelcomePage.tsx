@@ -13,15 +13,17 @@ import {
   openDesignInLibrary,
   renameDesignInLibrary,
 } from '../../../utils/designLibrary';
-import { useAppTheme } from '../../../shared/theme';
+import { ThemeToggle, useAppTheme } from '../../../shared/theme';
+import { NewDesignModal } from '../components/NewDesignModal';
 
 type WelcomePageProps = {
   onOpenDesign: (id: string) => void;
 };
 
-type NameDialog =
-  | { mode: 'new' }
-  | { mode: 'rename'; id: string; initial: string };
+type RenameDialog = {
+  id: string;
+  initial: string;
+};
 
 const formatUpdated = (ts: number) => {
   try {
@@ -38,9 +40,10 @@ const formatUpdated = (ts: number) => {
 };
 
 export const WelcomePage = ({ onOpenDesign }: WelcomePageProps) => {
-  const { mode, toggleMode } = useAppTheme();
+  const { mode } = useAppTheme();
   const [designs, setDesigns] = useState<DesignSummary[]>([]);
-  const [dialog, setDialog] = useState<NameDialog | null>(null);
+  const [dialog, setDialog] = useState<RenameDialog | null>(null);
+  const [showNewDesign, setShowNewDesign] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -52,7 +55,7 @@ export const WelcomePage = ({ onOpenDesign }: WelcomePageProps) => {
 
   useEffect(() => {
     if (!dialog) return;
-    setNameDraft(dialog.mode === 'rename' ? dialog.initial : '');
+    setNameDraft(dialog.initial);
     const frame = window.requestAnimationFrame(() => {
       inputRef.current?.focus();
       inputRef.current?.select();
@@ -69,11 +72,12 @@ export const WelcomePage = ({ onOpenDesign }: WelcomePageProps) => {
     onOpenDesign(opened.id);
   };
 
-  const handleCreate = (name: string) => {
+  const handleCreate = (width: number, height: number, name: string) => {
     const created = createDesignInLibrary(
-      createBlankPages(),
+      createBlankPages({ width, height }),
       name.trim() || undefined,
     );
+    setShowNewDesign(false);
     onOpenDesign(created.id);
   };
 
@@ -81,11 +85,6 @@ export const WelcomePage = ({ onOpenDesign }: WelcomePageProps) => {
     event?.preventDefault();
     if (!dialog) return;
     const trimmed = nameDraft.trim();
-    if (dialog.mode === 'new') {
-      setDialog(null);
-      handleCreate(trimmed);
-      return;
-    }
     if (!trimmed) return;
     renameDesignInLibrary(dialog.id, trimmed);
     setDialog(null);
@@ -145,21 +144,7 @@ export const WelcomePage = ({ onOpenDesign }: WelcomePageProps) => {
           padding: '20px 28px',
         }}
       >
-        <button
-          type="button"
-          onClick={toggleMode}
-          css={{
-            border: '1px solid var(--app-border)',
-            background: 'var(--app-panel)',
-            color: 'var(--app-text-strong)',
-            borderRadius: 8,
-            padding: '8px 14px',
-            fontWeight: 700,
-            cursor: 'pointer',
-          }}
-        >
-          {mode === 'dark' ? 'Light' : 'Dark'}
-        </button>
+        <ThemeToggle />
       </header>
 
       <main
@@ -208,7 +193,7 @@ export const WelcomePage = ({ onOpenDesign }: WelcomePageProps) => {
           </p>
           <button
             type="button"
-            onClick={() => setDialog({ mode: 'new' })}
+            onClick={() => setShowNewDesign(true)}
             css={{
               border: 'none',
               background: '#3d8eff',
@@ -262,7 +247,7 @@ export const WelcomePage = ({ onOpenDesign }: WelcomePageProps) => {
           >
             <button
               type="button"
-              onClick={() => setDialog({ mode: 'new' })}
+              onClick={() => setShowNewDesign(true)}
               css={{
                 minHeight: 160,
                 border: '1px dashed var(--app-border-strong)',
@@ -318,28 +303,52 @@ export const WelcomePage = ({ onOpenDesign }: WelcomePageProps) => {
                     cursor: 'pointer',
                     padding: 0,
                     textAlign: 'left',
-                    minHeight: 96,
+                    // Was 96px, which made the preview box ~3.3:1 — with
+                    // `object-fit: contain` a portrait design shrank to a
+                    // ~48px-wide sliver. A squarer box keeps previews legible.
+                    minHeight: 150,
                     position: 'relative',
                   }}
                 >
-                  <div
-                    css={{
-                      position: 'absolute',
-                      inset: 18,
-                      borderRadius: 8,
-                      background: '#fff',
-                      boxShadow: 'var(--app-canvas-shadow)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      color: '#9aa0b5',
-                      fontSize: 12,
-                      fontWeight: 700,
-                      letterSpacing: '0.04em',
-                    }}
-                  >
-                    CANVAS
-                  </div>
+                  {design.thumbnail ? (
+                    <img
+                      alt={`${design.name} preview`}
+                      src={design.thumbnail}
+                      css={{
+                        position: 'absolute',
+                        inset: 18,
+                        // An absolutely-positioned <img> with `height: auto`
+                        // keeps its intrinsic ratio and ignores `bottom`, so it
+                        // overflows the card. Give the box explicit dimensions
+                        // and let object-fit letterbox inside it.
+                        width: 'calc(100% - 36px)',
+                        height: 'calc(100% - 36px)',
+                        objectFit: 'contain',
+                        borderRadius: 8,
+                        background: '#fff',
+                        boxShadow: 'var(--app-canvas-shadow)',
+                      }}
+                    />
+                  ) : (
+                    <div
+                      css={{
+                        position: 'absolute',
+                        inset: 18,
+                        borderRadius: 8,
+                        background: '#fff',
+                        boxShadow: 'var(--app-canvas-shadow)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: '#9aa0b5',
+                        fontSize: 12,
+                        fontWeight: 700,
+                        letterSpacing: '0.04em',
+                      }}
+                    >
+                      CANVAS
+                    </div>
+                  )}
                 </button>
                 <div
                   css={{
@@ -387,7 +396,6 @@ export const WelcomePage = ({ onOpenDesign }: WelcomePageProps) => {
                       type="button"
                       onClick={() =>
                         setDialog({
-                          mode: 'rename',
                           id: design.id,
                           initial: design.name,
                         })
@@ -441,6 +449,12 @@ export const WelcomePage = ({ onOpenDesign }: WelcomePageProps) => {
         </section>
       </main>
 
+      <NewDesignModal
+        open={showNewDesign}
+        onClose={() => setShowNewDesign(false)}
+        onCreate={handleCreate}
+      />
+
       {dialog && (
         <div
           role="presentation"
@@ -477,7 +491,7 @@ export const WelcomePage = ({ onOpenDesign }: WelcomePageProps) => {
                 marginBottom: 12,
               }}
             >
-              {dialog.mode === 'new' ? 'Name your new design' : 'Rename design'}
+              Rename design
             </div>
             <input
               ref={inputRef}
@@ -532,7 +546,7 @@ export const WelcomePage = ({ onOpenDesign }: WelcomePageProps) => {
                   fontWeight: 700,
                 }}
               >
-                {dialog.mode === 'new' ? 'Create' : 'Rename'}
+                Rename
               </button>
             </div>
           </form>

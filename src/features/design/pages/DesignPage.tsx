@@ -37,7 +37,10 @@ export const DesignPage = () => {
           `https://www.googleapis.com/webfonts/v1/webfonts?key=${process.env.FONT_API_KEY}`,
         )
         .catch(() => ({ data: { items: [] } }));
-      const items = data.data.items;
+      // The shared axios interceptor rewrites every failed GET into `{ data: [] }`,
+      // so a rejection never reaches the `.catch` above and the payload can be an
+      // array where an object was expected. Never trust the shape.
+      const items = Array.isArray(data?.data?.items) ? data.data.items : [];
       const res: FontData[] = items.map((i) => {
         const fonts = Object.entries(i.files).reduce(
           (acc, [fontWeight, file]) => {

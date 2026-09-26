@@ -4,7 +4,6 @@ interface SidebarTabProps {
   tabs: {
     name: string;
     icon: ReactNode;
-    isBusiness?: boolean;
   }[];
   active: string | null;
   onChange: (e: React.MouseEvent, tab: string) => void;
@@ -107,21 +106,6 @@ export const SidebarTab: FC<SidebarTabProps> = ({ tabs, active, onChange }) => {
             <span css={{ fontSize: 10, lineHeight: 1.6, fontWeight: 600 }}>
               {tab.name}
             </span>
-            {tab.isBusiness && (
-              <div
-                css={{
-                  position: 'absolute',
-                  background: '#fdebcf',
-                  color: '#181c32',
-                  borderRadius: 9999,
-                  fontSize: 9,
-                  padding: '2px 4px',
-                  top: 0,
-                }}
-              >
-                Business
-              </div>
-            )}
           </div>
         ))}
       </div>
