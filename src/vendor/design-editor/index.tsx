@@ -125,6 +125,10 @@ type EditorActions = {
   selectLayers: (ids: string[]) => void;
   /** Alignment guides shown while dragging; cleared on drop. */
   setGuides: (guides: SnapGuide[]) => void;
+  /** Snapshot the page before a drag/resize so the whole gesture is one undo step. */
+  beginInteraction: () => void;
+  /** Close the snapshot opened by `beginInteraction`. */
+  endInteraction: () => void;
   setEditingLayer: (id: string | null) => void;
   goToPage: (index: number) => void;
   addPage: () => void;
@@ -687,6 +691,10 @@ const LayerView = ({
       const rawDx = ev.clientX - startX;
       const rawDy = ev.clientY - startY;
       if (!moved && Math.hypot(rawDx, rawDy) < 4) return;
+      if (!moved) {
+        // Snapshot before the first live patch, so undo restores the pre-drag position.
+        ctx.actions.beginInteraction();
+      }
       moved = true;
       const dx = rawDx / pageScale;
       const dy = rawDy / pageScale;
@@ -752,7 +760,11 @@ const LayerView = ({
     const onUp = () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
-      if (moved) ctx.actions.setGuides([]);
+      if (moved) {
+        ctx.actions.setGuides([]);
+        // Close the snapshot taken at movement start: the gesture becomes one undo step.
+        ctx.actions.endInteraction();
+      }
     };
 
     window.addEventListener('pointermove', onMove);
@@ -1804,6 +1816,7 @@ export const Editor = ({
   const [designs, setDesigns] = useState<DesignSummary[]>(boot.designs);
   const past = useRef<SerializedPage[][]>([]);
   const future = useRef<SerializedPage[][]>([]);
+  const pendingUndo = useRef<SerializedPage[] | null>(null);
   const pagesRef = useRef(pages);
   const activePageRef = useRef(activePage);
   const textDraftRef = useRef<{ id: string; text: string } | null>(null);
@@ -2166,6 +2179,16 @@ export const Editor = ({
         );
       },
       setGuides,
+      beginInteraction: () => {
+        pendingUndo.current = clonePages(pagesRef.current);
+      },
+      endInteraction: () => {
+        const before = pendingUndo.current;
+        pendingUndo.current = null;
+        if (!before) return;
+        past.current.push(before);
+        future.current = [];
+      },
       setEditingLayer: (id) => {
         if (!id) {
           flushTextDraft();
