@@ -15,6 +15,7 @@ html[data-theme='light'] {
   --app-tab-rail: #ffffff;
   --app-tab-active: #ffffff;
   --app-canvas-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  --app-guide: #3d8eff;
 }
 
 html[data-theme='dark'] {
@@ -32,6 +33,7 @@ html[data-theme='dark'] {
   --app-tab-rail: #12121a;
   --app-tab-active: #1a1a24;
   --app-canvas-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  --app-guide: #6ea8ff;
 }
 
 html, body {

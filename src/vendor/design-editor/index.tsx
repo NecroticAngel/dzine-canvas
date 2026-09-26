@@ -58,6 +58,9 @@ type PageSize = { width: number; height: number };
 type Point = { x: number; y: number };
 type ResizeCorner = 'nw' | 'ne' | 'sw' | 'se';
 
+/** One alignment guide, in page coordinates. `x` is vertical, `y` horizontal. */
+type SnapGuide = { axis: 'x' | 'y'; position: number };
+
 type EditorState = {
   pages: SerializedPage[];
   activePage: number;
@@ -120,6 +123,8 @@ type EditorActions = {
   setData: (pages: SerializedPage[]) => void;
   setSidebar: (name?: string) => void;
   selectLayers: (ids: string[]) => void;
+  /** Alignment guides shown while dragging; cleared on drop. */
+  setGuides: (guides: SnapGuide[]) => void;
   setEditingLayer: (id: string | null) => void;
   goToPage: (index: number) => void;
   addPage: () => void;
@@ -173,6 +178,7 @@ type EditorContextValue = EditorState & {
   selectedCell: TableCellRef | null;
   currentDesign: DesignSummary | null;
   designs: DesignSummary[];
+  guides: SnapGuide[];
 };
 
 const EditorContext = createContext<EditorContextValue | null>(null);
@@ -493,6 +499,91 @@ const remapLayerTree = (
   return { rootId: idMap.get(tree.rootId) as string, layers };
 };
 
+/** Screen-pixel distance within which a drag latches onto a guide. */
+const SNAP_THRESHOLD = 6;
+
+const isDescendantOf = (
+  layers: SerializedLayers,
+  id: string,
+  ancestorId: string,
+): boolean => {
+  let cursor: string | null = layers[id]?.parent ?? null;
+  for (let guard = 0; cursor && cursor !== 'ROOT' && guard < 64; guard += 1) {
+    if (cursor === ancestorId) return true;
+    cursor = layers[cursor]?.parent ?? null;
+  }
+  return false;
+};
+
+/** Closest `targets` entry to any of `moving`, when within `threshold`. */
+const closestSnap = (moving: number[], targets: number[], threshold: number) => {
+  let best: { delta: number; line: number } | null = null;
+  for (const value of moving) {
+    for (const target of targets) {
+      const delta = target - value;
+      if (Math.abs(delta) > threshold) continue;
+      if (!best || Math.abs(delta) < Math.abs(best.delta)) {
+        best = { delta, line: target };
+      }
+    }
+  }
+  return best;
+};
+
+/**
+ * Snap a dragged box to the page and to its siblings.
+ *
+ * Candidates per axis are the leading edge, centre and trailing edge of every
+ * other layer, plus the page's own edges and centre. The two axes snap
+ * independently, so a drag can latch onto a vertical and a horizontal guide at
+ * once.
+ */
+const computeSnap = (
+  layers: SerializedLayers,
+  movingId: string,
+  position: Point,
+  size: PageSize,
+  pageSize: PageSize,
+  threshold: number,
+): { position: Point; guides: SnapGuide[] } => {
+  const xTargets = [0, pageSize.width / 2, pageSize.width];
+  const yTargets = [0, pageSize.height / 2, pageSize.height];
+
+  for (const [id, layer] of Object.entries(layers)) {
+    if (id === 'ROOT' || id === movingId) continue;
+    if (isDescendantOf(layers, id, movingId)) continue;
+    const props = layer.props as { position?: Point; boxSize?: PageSize };
+    const p = props.position;
+    const box = props.boxSize;
+    if (!p || !box?.width || !box?.height) continue;
+    xTargets.push(p.x, p.x + box.width / 2, p.x + box.width);
+    yTargets.push(p.y, p.y + box.height / 2, p.y + box.height);
+  }
+
+  const snapX = closestSnap(
+    [position.x, position.x + size.width / 2, position.x + size.width],
+    xTargets,
+    threshold,
+  );
+  const snapY = closestSnap(
+    [position.y, position.y + size.height / 2, position.y + size.height],
+    yTargets,
+    threshold,
+  );
+
+  const guides: SnapGuide[] = [];
+  if (snapX) guides.push({ axis: 'x', position: snapX.line });
+  if (snapY) guides.push({ axis: 'y', position: snapY.line });
+
+  return {
+    position: {
+      x: position.x + (snapX?.delta ?? 0),
+      y: position.y + (snapY?.delta ?? 0),
+    },
+    guides,
+  };
+};
+
 /** Move one layer a single slot up (`forward`) or down its parent's child list. */
 const moveLayerInParent = (
   layers: SerializedLayers,
@@ -601,8 +692,26 @@ const LayerView = ({
       const dy = rawDy / pageScale;
 
       if (mode === 'move') {
+        const page = ctx.pages[ctx.activePage];
+        const layers = page?.layers;
+        let next = { x: origin.x + dx, y: origin.y + dy };
+        let snaps: SnapGuide[] = [];
+        if (layers) {
+          // Threshold is in page units, so the pull feels the same at any zoom.
+          const snapped = computeSnap(
+            layers,
+            layerId,
+            next,
+            originSize,
+            pageSizeOf(page),
+            SNAP_THRESHOLD / pageScale,
+          );
+          next = snapped.position;
+          snaps = snapped.guides;
+        }
+        ctx.actions.setGuides(snaps);
         ctx.actions.updateLayerBox(layerId, {
-          position: { x: origin.x + dx, y: origin.y + dy },
+          position: next,
           boxSize: originSize,
         });
         return;
@@ -643,6 +752,7 @@ const LayerView = ({
     const onUp = () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
+      if (moved) ctx.actions.setGuides([]);
     };
 
     window.addEventListener('pointermove', onMove);
@@ -1687,6 +1797,7 @@ export const Editor = ({
   const [selectedLayerIds, setSelectedLayerIds] = useState<string[]>([]);
   const [editingLayerId, setEditingLayerId] = useState<string | null>(null);
   const [selectedCell, setSelectedCell] = useState<TableCellRef | null>(null);
+  const [guides, setGuides] = useState<SnapGuide[]>([]);
   const [currentDesign, setCurrentDesign] = useState<DesignSummary | null>(
     boot.currentDesign,
   );
@@ -2054,6 +2165,7 @@ export const Editor = ({
           current && ids.includes(current) ? current : null,
         );
       },
+      setGuides,
       setEditingLayer: (id) => {
         if (!id) {
           flushTextDraft();
@@ -2270,6 +2382,7 @@ export const Editor = ({
       selectedCell,
       currentDesign,
       designs,
+      guides,
       actions,
       query,
     }),
@@ -2279,6 +2392,7 @@ export const Editor = ({
       currentDesign,
       designs,
       editingLayerId,
+      guides,
       selectedCell,
       pages,
       query,
@@ -2541,6 +2655,7 @@ export const DesignFrame = ({ data }: { data?: SerializedPage[] }) => {
   const rendered = pages.length ? pages : (data ?? []);
   const page = rendered[activePage] ?? rendered[0];
   const size = pageSizeOf(page);
+  const guides = ctx?.guides ?? [];
 
   return (
     <div
@@ -2572,11 +2687,41 @@ export const DesignFrame = ({ data }: { data?: SerializedPage[] }) => {
           css={{
             width: size.width,
             height: size.height,
+            position: 'relative',
             transform: `scale(${scale})`,
             transformOrigin: 'top left',
           }}
         >
           <PageCanvas page={page} />
+          {guides.map((guide) => (
+            <div
+              key={`${guide.axis}-${guide.position}`}
+              data-snap-guide={guide.axis}
+              style={
+                guide.axis === 'x'
+                  ? {
+                      position: 'absolute',
+                      left: guide.position,
+                      top: 0,
+                      width: 1 / scale,
+                      height: size.height,
+                      background: 'var(--app-guide)',
+                      pointerEvents: 'none',
+                      zIndex: 6,
+                    }
+                  : {
+                      position: 'absolute',
+                      top: guide.position,
+                      left: 0,
+                      height: 1 / scale,
+                      width: size.width,
+                      background: 'var(--app-guide)',
+                      pointerEvents: 'none',
+                      zIndex: 6,
+                    }
+              }
+            />
+          ))}
         </div>
       </div>
       <CellToolbar />
