@@ -78,8 +78,12 @@ Mounted at `` app.use(`${BASE_PATH}/api`, api) ``.
 
 ## 3. CURRENT STATE
 
-**Baseline:** branch `master`, HEAD = `9e84f2a`, **1 commit ahead of `origin/master`**
-(**push it**). Working tree clean apart from `ideas_todo.md` itself.
+**Baseline:** branch `master`, all work pushed to `origin/master`. Run `git log --oneline -8` for
+HEAD. Working tree clean apart from `ideas_todo.md` and line-ending-only churn in
+`ShapeContent.tsx` / `styles.css` (empty `git diff` — ignore them).
+
+Upstream now also carries the multi-tenant plan (`docs/plans/multi-tenant.md`) and Phase 2 of it —
+see §3.5 for what is done and what is next.
 
 Working & verified:
 - Canvas presets + `NewDesignModal` (social sizes, 12 categories, custom W×H, search)
@@ -119,6 +123,43 @@ between separate tool invocations — do the draw **and** the toolbar assertions
 
 Small debt worth knowing: `DrawContent`'s geometry is hard-coded (`left: 72`, `top: 44`,
 `120×250`) rather than themed, so it won't follow light/dark restyling.
+
+---
+
+## 3.5 MULTI-TENANT WORK (in progress — see `docs/plans/multi-tenant.md`)
+
+Goal: hand this to clients. Each **client organisation** gets logins, sees the templates we share
+with them, and creates its own designs. Decisions already taken: orgs with multiple member logins,
+**invite-only**, designs owned by the organisation, IdP deliberately left provider-agnostic.
+
+**Done**
+- `api/db.js` — metadata in `node:sqlite` (built into Node 26: no dependency, no native build).
+  Tables: tenants, members, designs, templates, template_grants. Payloads stay as files.
+- Design writes are **atomic** (temp + rename); thumbnails are real image files served from
+  `GET /designs/:id/thumb`, not data URLs.
+- `GET /designs` no longer parses every design body — it was O(total bytes on disk).
+- `adoptOrphanDesigns` migrates a pre-database install and adopts hand-dropped files.
+- The browser syncs: `designLibrary.ts` keeps its synchronous API and got a debounced upload queue
+  plus `hydrateLibrary()`. Verified: local designs migrate up, saves reach the server, thumbnails are
+  captured/uploaded/served, and re-hydrating does not duplicate.
+- Save button shows Saving… / Retrying… rather than claiming "Saved" on the local write alone.
+
+**Next**
+1. **Phase 1 — identity.** Replace the body of `resolveTenantId` in `api/server.js` (the single seam)
+   with a verified token check against a configurable JWKS/issuer URL. Then: delete the `?userId=` /
+   `X-User-Id` trust (**anyone can read anyone's designs today**), delete
+   `GET /media/uploads/:userId/:file` (IDOR — any tenant's uploads readable by guessing), gate
+   template writes to an admin, and **make the axios GET interceptor honest** — it rewrites every
+   failed GET into a fake `{data: []}` 200, which would silently swallow 401/403.
+2. Autosave. Today a forgotten Save still loses work; only saved state is uploaded.
+3. Helm: `UPLOADS_DIR` is unset while `DESIGNS_DIR`/`TEMPLATES_DIR` point at `/data`, so **uploads are
+   lost on every redeploy**.
+4. Repo history is 192 MB, of which ~175 MB is one 58 MB `output-from-templates.pdf` committed three
+   times. It is untracked now but only a history rewrite removes it.
+
+**Testing the browser without Playwright MCP:** those tools can be disabled mid-session, and the
+integrated browser's `run_playwright_code` returns no values. Reliable fallback: drive the UI with
+`click_element` / `read_page` and assert against the API from the terminal (`Invoke-RestMethod`).
 
 ---
 
@@ -282,16 +323,17 @@ Working in c:\Users\jo\dev\NecroZine\canva-clone ONLY (ignore NecroZine_Next/Ope
 
 Please read ideas_todo.md in that folder — it's a handover from your previous session.
 
-State: Tiers 0, 0.5, 1, 2 and 2.5 are DONE and committed. Tier 2 is complete apart from
-rulers/grid. Tier 3 (server-backed designs) is the biggest remaining unlock.
+State: editor features are done through Tier 2 (snapping, smart guides, align/distribute, undoable
+drags, layer clipboard, undo/redo). The multi-tenant work has started — read
+`docs/plans/multi-tenant.md` **and** §3.5 first; §3.5 lists exactly what is done and what is next.
 
 Next, in order:
-1. Push master — 1 commit ahead of origin.
-2. Tier 3 — move the design library off localStorage onto the `/api/designs` and `/api/uploads`
-   endpoints that already exist but are unused, with a migration path and debounced autosave.
-   This is a data-model change, so plan it before coding.
-3. Or Tier 5 (export upgrades) / Tier 2 rulers+grid if you want something smaller.
+1. **Phase 1 — identity.** One function to replace: `resolveTenantId` in `api/server.js`. Also
+   remove the spoofable `?userId=` trust, the IDOR in `GET /media/uploads/:userId/:file`, and make
+   the axios GET interceptor stop rewriting failures into fake empty 200s.
+2. **Autosave** — today a forgotten Save loses work; only saved state is uploaded.
+3. Tier 2 rulers/grid, Tier 5 export upgrades, or Tier 4 filling the permanently-empty panels.
 
-Verify in the real browser, not just tsc. Read §3 and the §4 gotchas before writing Playwright
+Verify in the real browser, not just tsc. Read §3, §3.5 and the §4 gotchas before writing Playwright
 code — they will save you an hour.
 ```

@@ -166,8 +166,25 @@ owns, so a client can never mutate what we shared.
     update, adoption of a hand-dropped file, delete (204) with file + thumbnail cleanup, and 404 after.
 - Known gap: if someone deletes a design *file* by hand, the row survives and the list still shows it
   (the payload read then 404s). A repair pass could reconcile this; low priority.
-- Not yet done: the frontend still reads localStorage. Wiring `designLibrary.ts` to these endpoints
-  is the next step, and it is the risky one — the editor depends on that module heavily.
+- **Phase 2 step 2 — DONE.** The browser now syncs to the account.
+  `src/utils/designLibrary.ts` keeps its synchronous API (the vendored editor calls it synchronously
+  in dozens of places) and became a cache in front of the API:
+  - mutations queue per design and flush on an **800 ms debounce**, so the save-plus-thumbnail pair
+    collapses into one request; a delete beats a queued upload; failures retry after 5 s;
+  - `hydrateLibrary()` adopts the account's designs, is idempotent, and never duplicates;
+  - the throwaway placeholder design is discarded once real designs exist;
+  - the welcome page **waits for hydration** before rendering the grid, because the editor must not
+    boot against a half-populated cache — the first save would have nowhere to go;
+  - the Save button reports upload state instead of claiming "Saved" on the local write alone.
+  - Verified in the browser: two existing local designs were migrated up on first load, a new design
+    plus a shape saved with Ctrl+S reached the server, the thumbnail was captured, uploaded, stored
+    as a `.jpg` and served back as `200 image/jpeg`, and a second hydrate produced no duplicates.
+- Known gap: a local edit newer than the server wins (last-write-wins). Two people editing the same
+  design at once will clobber each other; there is no version check or conflict UI yet.
+- **Not yet done: autosave.** Edits still persist only when Save/Ctrl+S is pressed, so 'debounced
+  saving' currently means a debounced *upload of a save*, not saving without asking. Making every
+  edit persist would hook the editor's live-patch/commit flow and is a separate, riskier change.
+- Next: Phase 1 (identity), which is now a single function — `resolveTenantId` in `api/server.js`.
 
 ### Phase 1 — real identity (security floor)
 1. Decide the IdP + claim mapping (`sub` → `members.external_id`; first login provisions or is
