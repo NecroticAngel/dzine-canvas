@@ -167,21 +167,7 @@ export const ShapeContent: FC<{ onClose: () => void }> = ({ onClose }) => {
         </div>
       </div>
       <div css={{ padding: '16px' }}>
-        <div css={{ padding: '8px 0', fontWeight: 700 }}>
-          Arrow
-          <div
-            css={{
-              display: 'inline-block',
-              marginLeft: 6,
-              background: '#fdebcf',
-              borderRadius: 9999,
-              fontSize: 9,
-              padding: '2px 4px',
-            }}
-          >
-            Business
-          </div>
-        </div>
+        <div css={{ padding: '8px 0', fontWeight: 700 }}>Arrow</div>
         <div
           css={{
             flexGrow: 1,

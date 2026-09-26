@@ -67,7 +67,14 @@ export const DrawContent: FC<{ onClose: () => void }> = ({ onClose }) => {
       svgRef.current.appendChild(svgPath);
     },
     onEnd: (path, boxSize, position) => {
-      const page = document.getElementById(`lidojs-page-${activePage}`);
+      // A plain click is a pointerdown/pointerup with no movement: `path` is empty and the
+      // box is 0x0. Committing that left an invisible layer on the page, so only strokes
+      // that actually cover some ground become layers.
+      const drew = !!path && boxSize.width > 0 && boxSize.height > 0;
+      const page = drew
+        ? document.getElementById(`lidojs-page-${activePage}`)
+        : null;
+
       if (page) {
         const rect = page.getBoundingClientRect();
         const p = {
