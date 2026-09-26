@@ -22,3 +22,6 @@ pnpm-debug.log*
 # Runtime storage: the metadata DB and per-tenant designs/uploads are state, not source.
 api/data/db.sqlite*
 api/data/users/
+
+# Generated exports (a 58 MB version of output-from-templates.pdf sits in history).
+output-*.pdf
