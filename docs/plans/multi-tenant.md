@@ -23,15 +23,15 @@ share with them, and creates and saves its own designs — without seeing or tou
 | Infra | Traefik ingress already references an **OIDC middleware**; PVC mounted at `/data`. | `infra/helm/dzine-canvas/values.yaml:16`, `templates/deployment.yaml` |
 | Node | **v26.8.1, and `node:sqlite` works with no flag and no dependency** (verified locally). | `mise.toml`, `Dockerfile` |
 
-### Two landmines found while reading
+### Two landmines found while reading — both now fixed in Phase 2 step 1
 
-1. **`GET /designs` parses every design file in full** (`readDesigns`, `api/server.js:93-113`) just to
-   return `{id,name,updatedAt}`. Listing N designs costs O(total bytes on disk). With uploads already
-   at 8.5 MB a piece and pages embedding base64 images, this gets slow fast. The list must become a
-   cheap query, not a directory scan.
+1. ~~**`GET /designs` parses every design file in full** (`readDesigns`, `api/server.js:93-113`) just to
+   return `{id,name,updatedAt}`.~~ **Fixed.** Listing is now one indexed query against `node:sqlite`.
+   Verified by corrupting a design's payload file on disk: `GET /designs` still returns it correctly
+   (name from the DB) while `GET /designs/:id` 404s, proving the list no longer touches bodies.
 2. **Helm sets `DESIGNS_DIR`/`TEMPLATES_DIR` to `/data` but leaves `UPLOADS_DIR` unset**, so uploads
    land in `/app/api/data/users/{uid}/uploads` — ephemeral container storage. **Every upload is lost
-   on redeploy today.**
+   on redeploy today.** Still open; tracked in Phase 4.
 
 ## 3. Decisions
 
@@ -149,6 +149,25 @@ All of these sit behind the identity check.
 owns, so a client can never mutate what we shared.
 
 ## 7. Phases
+
+### Progress so far
+
+- **Phase 2 step 1 — DONE.** `api/db.js` (schema + helpers, `node:sqlite`, no new dependency),
+  `api/storagePaths.js` now exposes `thumbsDir`, and `api/server.js`:
+  - list/read/update/create/delete all go through the metadata DB;
+  - writes are atomic (temp file + rename) so a crash can't half-write a design;
+  - thumbnails are stored as image files beside the designs and served from
+    `GET /designs/:id/thumb`, instead of data URLs bloating records;
+  - `adoptOrphanDesigns` migrates a pre-database install on first list, and picks up anything
+    dropped into the designs directory by hand. It only reads ids the DB doesn't know and only
+    runs when the directory holds more files than there are live rows.
+  - **New single identity seam `resolveTenantId(req)`** — Phase 1 replaces only this function.
+  - Verified over HTTP: health, create (409 on duplicate), list, read, thumbnail (200 `image/png`),
+    update, adoption of a hand-dropped file, delete (204) with file + thumbnail cleanup, and 404 after.
+- Known gap: if someone deletes a design *file* by hand, the row survives and the list still shows it
+  (the payload read then 404s). A repair pass could reconcile this; low priority.
+- Not yet done: the frontend still reads localStorage. Wiring `designLibrary.ts` to these endpoints
+  is the next step, and it is the risky one — the editor depends on that module heavily.
 
 ### Phase 1 — real identity (security floor)
 1. Decide the IdP + claim mapping (`sub` → `members.external_id`; first login provisions or is

@@ -72,7 +72,12 @@ export const getStoragePaths = (userId = DEFAULT_USER) => {
     path.join(STORAGE_ROOT, 'users', uid, 'uploads'),
   );
 
-  for (const dir of [templatesDir, publicDir, designsDir, uploadsDir]) {
+  // Design previews live next to the designs they belong to, as real image
+  // files. The browser used to keep them as data URLs in localStorage, which
+  // would bloat every design record now that saving moves server-side.
+  const thumbsDir = path.join(path.dirname(designsDir), 'thumbs');
+
+  for (const dir of [templatesDir, publicDir, designsDir, uploadsDir, thumbsDir]) {
     mkdirSync(dir, { recursive: true });
   }
   mkdirSync(path.join(publicDir, 'thumbs'), { recursive: true });
@@ -84,6 +89,7 @@ export const getStoragePaths = (userId = DEFAULT_USER) => {
     publicDir,
     designsDir,
     uploadsDir,
+    thumbsDir,
   };
 };
 

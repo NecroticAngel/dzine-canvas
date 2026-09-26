@@ -6,6 +6,7 @@ import {
   copyFileSync,
   readdirSync,
   readFileSync,
+  renameSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
@@ -13,6 +14,16 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { getStoragePaths, storageConfig } from './storagePaths.js';
+import {
+  deleteDesign,
+  ensureTenant,
+  getDesign,
+  knownDesignIds,
+  listDesigns,
+  liveDesignCount,
+  openDatabase,
+  upsertDesign,
+} from './db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BASE_PATH = `/${String(process.env.BASE_PATH || '')
@@ -21,6 +32,7 @@ const SEED_TEMPLATES_DIR = path.join(__dirname, 'data', 'templates');
 const WEB_DIR = path.join(__dirname, '..', 'dist');
 
 const bootPaths = getStoragePaths();
+const db = openDatabase(bootPaths.storageRoot);
 
 // Seed packaged templates into the configured templates dir (once).
 for (const file of readdirSync(SEED_TEMPLATES_DIR).filter((name) =>
@@ -38,12 +50,24 @@ api.use(cors({ origin: true }));
 api.use(express.json({ limit: '30mb' }));
 api.use(express.static(bootPaths.publicDir));
 
-const resolveUserId = (req) =>
+/**
+ * The single identity seam.
+ *
+ * Phase 1 replaces this body with a verified token/session lookup; every caller
+ * below already asks for a *tenant*, so nothing else has to change. Until then
+ * it keeps the old, unauthenticated behaviour, where the caller simply asserts
+ * who they are. That is a development stopgap and the first thing Phase 1
+ * removes — see docs/plans/multi-tenant.md.
+ */
+const resolveTenantId = (req) =>
   req.header('x-user-id') ||
   req.query.userId ||
   storageConfig.defaultUserId;
 
-const pathsFor = (req) => getStoragePaths(resolveUserId(req));
+/** @deprecated superseded by resolveTenantId; still used for upload URLs. */
+const resolveUserId = resolveTenantId;
+
+const pathsFor = (req) => getStoragePaths(resolveTenantId(req));
 
 const absoluteUrl = (req, pathname) => {
   if (/^https?:\/\//i.test(pathname)) return pathname;
@@ -69,6 +93,95 @@ const safeId = (value, fallback = randomUUID()) => {
   return value.trim().replace(/[^\w.-]+/g, '-') || fallback;
 };
 
+/** Write to a temp file then rename, so a crash can't leave a half-written design. */
+const writeFileAtomic = (filePath, contents) => {
+  const tempPath = `${filePath}.${randomUUID().slice(0, 8)}.tmp`;
+  writeFileSync(tempPath, contents);
+  renameSync(tempPath, filePath);
+};
+
+const THUMB_EXTENSIONS = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/webp': 'webp',
+};
+
+/** Decode a `data:image/...;base64,` thumbnail captured in the browser. */
+const parseThumbnail = (value) => {
+  if (typeof value !== 'string') return null;
+  const match = /^data:(image\/(?:png|jpeg|webp));base64,([\s\S]+)$/i.exec(
+    value.trim(),
+  );
+  if (!match) return null;
+  return {
+    extension: THUMB_EXTENSIONS[match[1].toLowerCase()],
+    buffer: Buffer.from(match[2], 'base64'),
+  };
+};
+
+/** Store a design's preview image and return the file name to record. */
+const writeThumbnail = (thumbsDir, id, dataUrl, previousPath) => {
+  const parsed = parseThumbnail(dataUrl);
+  if (!parsed) return previousPath ?? null;
+  if (previousPath) {
+    const stale = path.join(thumbsDir, path.basename(previousPath));
+    if (existsSync(stale)) unlinkSync(stale);
+  }
+  const file = `${id}.${parsed.extension}`;
+  writeFileAtomic(path.join(thumbsDir, file), parsed.buffer);
+  return file;
+};
+
+/** Read a design's pages payload from disk. */
+const readDesignPayload = (designsDir, id) => {
+  const filePath = path.join(designsDir, `${id}.json`);
+  if (!existsSync(filePath)) return null;
+  try {
+    const raw = JSON.parse(readFileSync(filePath, 'utf8'));
+    const pages = Array.isArray(raw?.pages) ? raw.pages : raw;
+    return isDesignPages(pages) ? pages : null;
+  } catch (error) {
+    console.warn(`Skipping bad design ${id}:`, error.message);
+    return null;
+  }
+};
+
+/**
+ * Adopt design files the database doesn't know about yet.
+ *
+ * Covers both the one-off migration of a pre-database install and anything
+ * dropped into the directory by hand. Files already known are skipped and the
+ * whole pass only runs when the directory holds more files than there are live
+ * rows, so the steady-state cost is one readdir and one count.
+ */
+const adoptOrphanDesigns = (db, tenantId, designsDir) => {
+  const files = readdirSync(designsDir).filter((name) => name.endsWith('.json'));
+  if (files.length <= liveDesignCount(db, tenantId)) return;
+  const known = knownDesignIds(db, tenantId);
+  for (const file of files) {
+    const id = file.replace(/\.json$/i, '');
+    if (known.has(id)) continue;
+    const pages = readDesignPayload(designsDir, id);
+    if (!pages) continue;
+    let name = id;
+    let updatedAt = Date.now();
+    try {
+      const raw = JSON.parse(readFileSync(path.join(designsDir, file), 'utf8'));
+      if (typeof raw?.name === 'string' && raw.name.trim()) name = raw.name.trim();
+      if (Number.isFinite(Number(raw?.updatedAt))) updatedAt = Number(raw.updatedAt);
+    } catch {
+      /* the payload read above already reported the problem */
+    }
+    upsertDesign(db, {
+      id,
+      tenantId,
+      name,
+      createdAt: updatedAt,
+      updatedAt,
+    });
+  }
+};
+
 const readTemplates = (templatesDir) => {
   const files = readdirSync(templatesDir).filter((name) => name.endsWith('.json'));
   const templates = [];
@@ -88,28 +201,6 @@ const readTemplates = (templatesDir) => {
     }
   }
   return templates.sort((a, b) => a.name.localeCompare(b.name));
-};
-
-const readDesigns = (designsDir) => {
-  const files = readdirSync(designsDir).filter((name) => name.endsWith('.json'));
-  const designs = [];
-  for (const file of files) {
-    try {
-      const raw = JSON.parse(readFileSync(path.join(designsDir, file), 'utf8'));
-      const pages = Array.isArray(raw?.pages) ? raw.pages : raw;
-      if (!isDesignPages(pages)) continue;
-      designs.push({
-        id: String(raw.id || file.replace(/\.json$/i, '')),
-        name: String(raw.name || file.replace(/\.json$/i, '')),
-        updatedAt: Number(raw.updatedAt || 0),
-        pages,
-        file,
-      });
-    } catch (error) {
-      console.warn(`Skipping bad design ${file}:`, error.message);
-    }
-  }
-  return designs.sort((a, b) => b.updatedAt - a.updatedAt);
 };
 
 const readUploads = (uploadsDir, req) => {
@@ -158,17 +249,20 @@ api.get('/media/uploads/:userId/:file', (req, res) => {
 
 api.get('/health', (req, res) => {
   const paths = pathsFor(req);
+  ensureTenant(db, paths.userId);
   res.json({
     ok: true,
     userId: paths.userId,
     templates: readTemplates(paths.templatesDir).length,
-    designs: readDesigns(paths.designsDir).length,
+    // Straight from the metadata store; counting designs no longer parses them.
+    designs: liveDesignCount(db, paths.userId),
     uploads: readUploads(paths.uploadsDir, req).length,
     paths: {
       storageRoot: paths.storageRoot,
       templatesDir: paths.templatesDir,
       designsDir: paths.designsDir,
       uploadsDir: paths.uploadsDir,
+      thumbsDir: paths.thumbsDir,
       publicDir: paths.publicDir,
     },
   });
@@ -282,83 +376,150 @@ api.delete('/templates/:id', (req, res) => {
 /** Designs */
 api.get('/designs', (req, res) => {
   const { designsDir, userId } = pathsFor(req);
+  ensureTenant(db, userId);
+  adoptOrphanDesigns(db, userId, designsDir);
+  // One indexed query — the old version parsed every design file in full.
   res.json(
-    readDesigns(designsDir).map(({ id, name, updatedAt }) => ({
-      id,
-      name,
-      updatedAt,
+    listDesigns(db, userId).map((row) => ({
+      id: row.id,
+      name: row.name,
+      updatedAt: row.updatedAt,
       userId,
+      thumbUrl: row.thumbPath
+        ? absoluteUrl(req, `/designs/${encodeURIComponent(row.id)}/thumb`)
+        : null,
     })),
   );
 });
 
 api.get('/designs/:id', (req, res) => {
-  const { designsDir } = pathsFor(req);
-  const found = readDesigns(designsDir).find((item) => item.id === req.params.id);
-  if (!found) {
+  const { designsDir, userId } = pathsFor(req);
+  ensureTenant(db, userId);
+  adoptOrphanDesigns(db, userId, designsDir);
+  const row = getDesign(db, userId, safeId(req.params.id));
+  const pages = row ? readDesignPayload(designsDir, row.id) : null;
+  if (!row || !pages) {
     res.status(404).json({ error: 'Design not found' });
     return;
   }
   res.json({
-    id: found.id,
-    name: found.name,
-    updatedAt: found.updatedAt,
-    pages: found.pages,
+    id: row.id,
+    name: row.name,
+    updatedAt: row.updatedAt,
+    pages,
   });
 });
 
+api.get('/designs/:id/thumb', (req, res) => {
+  const { thumbsDir, userId } = pathsFor(req);
+  const row = getDesign(db, userId, safeId(req.params.id));
+  const filePath = row?.thumbPath
+    ? path.join(thumbsDir, path.basename(row.thumbPath))
+    : null;
+  if (!filePath || !existsSync(filePath)) {
+    res.status(404).json({ error: 'No thumbnail for this design' });
+    return;
+  }
+  res.type(path.extname(filePath)).sendFile(filePath);
+});
+
 api.put('/designs/:id', (req, res) => {
-  const { designsDir } = pathsFor(req);
+  const { designsDir, thumbsDir, userId } = pathsFor(req);
   const id = safeId(req.params.id);
   const pages = req.body?.pages;
   if (!isDesignPages(pages)) {
     res.status(400).json({ error: 'Body must include pages: SerializedPage[]' });
     return;
   }
+  ensureTenant(db, userId);
+  const existing = getDesign(db, userId, id);
+  const now = Date.now();
   const name =
     typeof req.body.name === 'string' && req.body.name.trim()
       ? req.body.name.trim()
-      : id;
-  const record = {
+      : (existing?.name ?? id);
+  const serialized = JSON.stringify({ id, name, updatedAt: now, pages }, null, 2);
+  writeFileAtomic(path.join(designsDir, `${id}.json`), serialized);
+  const thumbPath = writeThumbnail(
+    thumbsDir,
+    id,
+    req.body.thumbnail,
+    existing?.thumbPath ?? null,
+  );
+  upsertDesign(db, {
+    id,
+    tenantId: userId,
+    name,
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: now,
+    bytes: Buffer.byteLength(serialized),
+    thumbPath,
+  });
+  res.json({
     id,
     name,
-    updatedAt: Date.now(),
-    pages,
-  };
-  writeFileSync(path.join(designsDir, `${id}.json`), JSON.stringify(record, null, 2));
-  res.json(record);
+    updatedAt: now,
+    thumbUrl: thumbPath
+      ? absoluteUrl(req, `/designs/${encodeURIComponent(id)}/thumb`)
+      : null,
+  });
 });
 
 api.post('/designs', (req, res) => {
-  const { designsDir } = pathsFor(req);
+  const { designsDir, thumbsDir, userId } = pathsFor(req);
   const pages = req.body?.pages;
   if (!isDesignPages(pages)) {
     res.status(400).json({ error: 'Body must include pages: SerializedPage[]' });
     return;
   }
   const id = safeId(req.body.id);
-  const name =
-    typeof req.body.name === 'string' && req.body.name.trim()
-      ? req.body.name.trim()
-      : `Design ${id.slice(0, 8)}`;
+  ensureTenant(db, userId);
   const filePath = path.join(designsDir, `${id}.json`);
   if (existsSync(filePath) && !req.body.overwrite) {
     res.status(409).json({ error: 'Design id already exists' });
     return;
   }
-  const record = { id, name, updatedAt: Date.now(), pages };
-  writeFileSync(filePath, JSON.stringify(record, null, 2));
-  res.status(201).json(record);
+  const now = Date.now();
+  const name =
+    typeof req.body.name === 'string' && req.body.name.trim()
+      ? req.body.name.trim()
+      : `Design ${id.slice(0, 8)}`;
+  const serialized = JSON.stringify({ id, name, updatedAt: now, pages }, null, 2);
+  writeFileAtomic(filePath, serialized);
+  const thumbPath = writeThumbnail(thumbsDir, id, req.body.thumbnail, null);
+  upsertDesign(db, {
+    id,
+    tenantId: userId,
+    name,
+    createdAt: now,
+    updatedAt: now,
+    bytes: Buffer.byteLength(serialized),
+    thumbPath,
+  });
+  res.status(201).json({
+    id,
+    name,
+    updatedAt: now,
+    thumbUrl: thumbPath
+      ? absoluteUrl(req, `/designs/${encodeURIComponent(id)}/thumb`)
+      : null,
+  });
 });
 
 api.delete('/designs/:id', (req, res) => {
-  const { designsDir } = pathsFor(req);
-  const found = readDesigns(designsDir).find((item) => item.id === req.params.id);
-  if (!found) {
+  const { designsDir, thumbsDir, userId } = pathsFor(req);
+  ensureTenant(db, userId);
+  const row = deleteDesign(db, userId, safeId(req.params.id));
+  if (!row) {
     res.status(404).json({ error: 'Design not found' });
     return;
   }
-  unlinkSync(path.join(designsDir, found.file));
+  const filePath = path.join(designsDir, `${row.id}.json`);
+  if (existsSync(filePath)) unlinkSync(filePath);
+  if (row.thumbPath) {
+    const thumbPath = path.join(thumbsDir, path.basename(row.thumbPath));
+    if (existsSync(thumbPath)) unlinkSync(thumbPath);
+  }
   res.status(204).end();
 });
 
