@@ -78,7 +78,7 @@ Mounted at `` app.use(`${BASE_PATH}/api`, api) ``.
 
 ## 3. CURRENT STATE
 
-**Baseline:** branch `master`, HEAD = `8299006`, **3 commits ahead of `origin/master`**
+**Baseline:** branch `master`, HEAD = `5469d8f`, **5 commits ahead of `origin/master`**
 (**push them**). Working tree clean apart from `ideas_todo.md` itself.
 
 Working & verified:
@@ -214,14 +214,17 @@ Test data in the library: `Portraitdfsfe` (used for testing),
       `DrawToolbar`), a section in `LayerSettings`, or keyboard-only. Ask the user before building.
 - [ ] Optional: rulers, grid.
 
-### Tier 2.5 — 🐛 UNDO DOES NOT COVER DRAGS (found while testing snapping)
-- [ ] `startInteraction`'s move/resize path calls `updateLayerBox` → `patchLayerLive`, which mutates
-      `pagesRef` and calls `setPages` **without** `commit`. So a drag creates **no undo entry**:
-      Ctrl+Z after moving a layer reverts the *previous* committed change instead. Same for resize.
-      Fixing it properly needs a begin/end interaction pair — snapshot the page on pointerdown and
-      `commit` that snapshot on pointerup (a naive `commit` at the end would push the already-moved
-      state as the "past", making undo a no-op). Worth doing: users will expect Ctrl+Z to undo a
-      drag, and Tier 1 just taught them the shortcut exists.
+### Tier 2.5 — ✅ DRAGS AND RESIZES ARE NOW UNDOABLE (`5469d8f`)
+- [x] `startInteraction` patched the page live via `updateLayerBox` → `patchLayerLive`, which
+      bypasses `commit()`, so moving/resizing a layer created **no** undo entry: Ctrl+Z after a
+      drag reverted the *previous* committed change instead.
+- [x] Fixed with `beginInteraction()` / `endInteraction()`. The snapshot is taken the moment a
+      gesture passes the 4 px movement threshold — **before** the first live patch, so it really is
+      the pre-drag state — and is pushed onto the undo stack on pointerup, clearing redo.
+      Taking it at movement start (not pointerdown) is what stops a never-moved click from
+      creating a no-op undo entry.
+- [x] Verified: drag (0,400) → (700,850); Ctrl+Z restores (0,400) in **one** step with no
+      intermediate stop; Ctrl+Shift+Z reapplies; Ctrl+Z steps back again.
 
 ### Tier 3 — server-backed designs (big unlock)
 - [ ] `GET/POST /api/designs` and `GET/POST /api/uploads` **already exist but are unused** — the
@@ -267,15 +270,15 @@ Working in c:\Users\jo\dev\NecroZine\canva-clone ONLY (ignore NecroZine_Next/Ope
 
 Please read ideas_todo.md in that folder — it's a handover from your previous session.
 
-State: Tier 0, Tier 0.5 and Tier 1 are DONE and committed. Tier 2 has snapping + smart guides
-working (8299006); align/distribute is not started.
+State: Tier 0, 0.5, 1 and 2.5 are DONE and committed. Tier 2 has snapping + smart guides
+working; align/distribute is NOT started.
 
-Next, in order of value:
-1. Tier 2.5 — make drags/resizes undoable (they currently create no undo entry).
-2. Tier 2 — align-to-page / distribute / multi-select align. ASK ME FIRST where the controls
-   should live; there is no multi-select toolbar today.
-3. Push master — it is 3 commits ahead of origin.
+Next, in order:
+1. Tier 2 — align-to-page / distribute / multi-select align. **ASK ME FIRST where the controls
+   should live**: there is no multi-selection toolbar today. Options are a floating bar above the
+   selection (like `DrawToolbar`), a section in `LayerSettings`, or keyboard-only.
+2. Push master — it is 5 commits ahead of origin.
 
-Verify in the real browser, not just tsc. Test notes are in §3 and the gotchas in §4 — read them
-before writing Playwright code, they will save you an hour.
+Verify in the real browser, not just tsc. Read §3 and the §4 gotchas before writing Playwright
+code — they will save you an hour.
 ```
