@@ -9,9 +9,13 @@ import {
   createDesignInLibrary,
   deleteDesignInLibrary,
   type DesignSummary,
+  getSyncStatus,
+  hydrateLibrary,
   listDesignSummaries,
   openDesignInLibrary,
   renameDesignInLibrary,
+  subscribeToSync,
+  type SyncStatus,
 } from '../../../utils/designLibrary';
 import { ThemeToggle, useAppTheme } from '../../../shared/theme';
 import { NewDesignModal } from '../components/NewDesignModal';
@@ -45,12 +49,27 @@ export const WelcomePage = ({ onOpenDesign }: WelcomePageProps) => {
   const [dialog, setDialog] = useState<RenameDialog | null>(null);
   const [showNewDesign, setShowNewDesign] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
+  const [hydrated, setHydrated] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>(getSyncStatus());
   const inputRef = useRef<HTMLInputElement>(null);
 
   const refresh = () => setDesigns(listDesignSummaries());
 
+  useEffect(() => subscribeToSync(setSyncStatus), []);
+
   useEffect(() => {
-    refresh();
+    let cancelled = false;
+    // Adopt the account's designs before showing the grid. The editor must not
+    // boot against a half-populated cache, or the first save would have nowhere
+    // to go.
+    void hydrateLibrary().finally(() => {
+      if (cancelled) return;
+      refresh();
+      setHydrated(true);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -435,7 +454,19 @@ export const WelcomePage = ({ onOpenDesign }: WelcomePageProps) => {
             ))}
           </div>
 
-          {designs.length === 0 && (
+          {!hydrated && (
+            <p
+              css={{
+                marginTop: 20,
+                color: 'var(--app-text-muted)',
+                fontSize: 14,
+              }}
+            >
+              Loading your designs…
+            </p>
+          )}
+
+          {hydrated && designs.length === 0 && (
             <p
               css={{
                 marginTop: 20,
@@ -444,6 +475,18 @@ export const WelcomePage = ({ onOpenDesign }: WelcomePageProps) => {
               }}
             >
               No designs yet — create your first one to get started.
+            </p>
+          )}
+
+          {hydrated && syncStatus === 'error' && (
+            <p
+              css={{
+                marginTop: 12,
+                color: '#e0a44a',
+                fontSize: 13,
+              }}
+            >
+              Some changes haven’t reached the server yet — still retrying.
             </p>
           )}
         </section>

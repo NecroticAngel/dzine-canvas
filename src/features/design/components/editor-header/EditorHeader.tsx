@@ -13,7 +13,12 @@ import {
   useState,
 } from 'react';
 import { downloadObjectAsJson } from '../../../../utils/download';
-import { safeFileName } from '../../../../utils/designLibrary';
+import {
+  getSyncStatus,
+  safeFileName,
+  subscribeToSync,
+  type SyncStatus,
+} from '../../../../utils/designLibrary';
 import {
   exportDesign,
   type ExportFormat,
@@ -88,6 +93,27 @@ const EditorHeaderForwardRef: ForwardRefRenderFunction<
   const [nameDialog, setNameDialog] = useState<NameDialogState | null>(null);
   const [nameDraft, setNameDraft] = useState('');
   const nameInputRef = useRef<HTMLInputElement>(null);
+
+  // Upload state lives in the design library; the button just reflects it, so
+  // "Saved" no longer implies the work has actually reached the server.
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>(getSyncStatus());
+  useEffect(() => subscribeToSync(setSyncStatus), []);
+  const syncing = syncStatus === 'saving' || syncStatus === 'pending';
+  const saveLabel = syncing
+    ? 'Saving…'
+    : syncStatus === 'error'
+      ? 'Retrying…'
+      : saveState === 'saved'
+        ? 'Saved'
+        : 'Save';
+  const saveBackground =
+    syncStatus === 'error'
+      ? '#b45309'
+      : syncing
+        ? '#2f7ae5'
+        : saveState === 'saved'
+          ? '#1f9d6a'
+          : '#3d8eff';
 
   useEffect(() => {
     if (!exportOpen && !filesOpen) return;
@@ -764,21 +790,24 @@ const EditorHeaderForwardRef: ForwardRefRenderFunction<
         <div
           css={{
             cursor: 'pointer',
-            color: saveState === 'saved' ? '#e8fff6' : '#fff',
+            color: '#fff',
             fontWeight: 700,
-            background: saveState === 'saved' ? '#1f9d6a' : '#3d8eff',
+            background: saveBackground,
             padding: '8px 14px',
             borderRadius: 8,
+            minWidth: 78,
+            textAlign: 'center',
             ':hover': {
-              background: saveState === 'saved' ? '#1f9d6a' : '#2f7ae5',
+              filter: 'brightness(1.08)',
             },
             '@media (max-width: 900px)': {
               display: 'none',
             },
           }}
           onClick={handleSave}
+          title="Save (Ctrl+S). Changes upload to your account automatically."
         >
-          {saveState === 'saved' ? 'Saved' : 'Save'}
+          {saveLabel}
         </div>
         <div
           css={{

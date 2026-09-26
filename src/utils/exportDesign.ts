@@ -109,8 +109,10 @@ export const captureThumbnail = async (
         },
       }),
     );
-  } catch {
-    // A preview must never be able to break saving.
+  } catch (error) {
+    // A preview must never be able to break saving, but staying silent made a
+    // broken capture look identical to "this design has no preview".
+    console.warn('[dzine] thumbnail capture failed:', error);
     return null;
   }
 };
