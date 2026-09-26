@@ -78,8 +78,8 @@ Mounted at `` app.use(`${BASE_PATH}/api`, api) ``.
 
 ## 3. CURRENT STATE
 
-**Baseline:** branch `master`, HEAD = `5469d8f`, **5 commits ahead of `origin/master`**
-(**push them**). Working tree clean apart from `ideas_todo.md` itself.
+**Baseline:** branch `master`, HEAD = `9e84f2a`, **1 commit ahead of `origin/master`**
+(**push it**). Working tree clean apart from `ideas_todo.md` itself.
 
 Working & verified:
 - Canvas presets + `NewDesignModal` (social sizes, 12 categories, custom W×H, search)
@@ -207,11 +207,23 @@ Test data in the library: `Portraitdfsfe` (used for testing),
       (`--app-guide`, both themes) inside the scaled page wrapper and clear on pointerup.
       Verified: 3 units shy of the page centre → snapped to exactly 508/540 on both axes; a drag
       near a sibling stroke's centre snapped to `524.891` instead; guides clear on drop.
-- [ ] **Align-to-page + distribute + multi-select align.** Not started. Every `align` hit in the
-      codebase today is *text* alignment — shapes have nothing.
-      ⚠️ **Needs a UI decision first:** there is no multi-selection *toolbar*, so align/distribute
-      controls have nowhere obvious to live. Options: a floating bar above the selection (like
-      `DrawToolbar`), a section in `LayerSettings`, or keyboard-only. Ask the user before building.
+- [x] **Align-to-page + distribute + multi-select align.** ✅ `9e84f2a`. New actions `alignLayers`
+      and `distributeLayers`, driven by a **floating bar above the selection** (the UI option the
+      user picked). Semantics worth remembering:
+      - >1 layer selected → align to the **selection's own bounds**; exactly 1 → align to the
+        **page**. That single-vs-multi switch is what makes the controls useful with one object.
+      - Distribute evens the **edge-to-edge gaps** of 3+ layers, holding both extremes. If the
+        content is wider than the span you get equal *negative* gaps (overlap) — Figma does the
+        same; we deliberately don't clamp to zero, which would break the extremes.
+      - Both go through `commit()`, so each command is one undo step.
+      - Both skip layers with no size, so the 0×0 draw leftovers don't get dragged around.
+      - The bar re-measures the page element every frame (rAF), so scrolling/zoom keep it glued to
+        the selection. It sits **48px** above the anchor, not 12px, to stack clear of
+        `DrawToolbar`/`QrToolbar`, which own the space directly above a layer. It hides while a
+        text layer is edited or a table cell is selected, and distribute is disabled below 3 layers.
+      - Verified: align top → all tops 508, Ctrl+Z restores; space-evenly → equal −38.58 gaps with
+        extremes preserved; single-layer align-to-page → x 508 and y 1016, i.e. exactly
+        (1080−64)/2 and 1080−64.
 - [ ] Optional: rulers, grid.
 
 ### Tier 2.5 — ✅ DRAGS AND RESIZES ARE NOW UNDOABLE (`5469d8f`)
@@ -270,14 +282,15 @@ Working in c:\Users\jo\dev\NecroZine\canva-clone ONLY (ignore NecroZine_Next/Ope
 
 Please read ideas_todo.md in that folder — it's a handover from your previous session.
 
-State: Tier 0, 0.5, 1 and 2.5 are DONE and committed. Tier 2 has snapping + smart guides
-working; align/distribute is NOT started.
+State: Tiers 0, 0.5, 1, 2 and 2.5 are DONE and committed. Tier 2 is complete apart from
+rulers/grid. Tier 3 (server-backed designs) is the biggest remaining unlock.
 
 Next, in order:
-1. Tier 2 — align-to-page / distribute / multi-select align. **ASK ME FIRST where the controls
-   should live**: there is no multi-selection toolbar today. Options are a floating bar above the
-   selection (like `DrawToolbar`), a section in `LayerSettings`, or keyboard-only.
-2. Push master — it is 5 commits ahead of origin.
+1. Push master — 1 commit ahead of origin.
+2. Tier 3 — move the design library off localStorage onto the `/api/designs` and `/api/uploads`
+   endpoints that already exist but are unused, with a migration path and debounced autosave.
+   This is a data-model change, so plan it before coding.
+3. Or Tier 5 (export upgrades) / Tier 2 rulers+grid if you want something smaller.
 
 Verify in the real browser, not just tsc. Read §3 and the §4 gotchas before writing Playwright
 code — they will save you an hour.
