@@ -78,8 +78,8 @@ Mounted at `` app.use(`${BASE_PATH}/api`, api) ``.
 
 ## 3. CURRENT STATE
 
-**Baseline:** branch `master`, HEAD = `c71fe64 "ww"`, **1 commit ahead of `origin/master`**
-(**push it**). Working tree clean apart from `ideas_todo.md` itself.
+**Baseline:** branch `master`, HEAD = `8299006`, **3 commits ahead of `origin/master`**
+(**push them**). Working tree clean apart from `ideas_todo.md` itself.
 
 Working & verified:
 - Canvas presets + `NewDesignModal` (social sizes, 12 categories, custom W×H, search)
@@ -172,17 +172,15 @@ Test data in the library: `Portraitdfsfe` (used for testing),
 - [x] Push `master`. ✅ was in sync at `079425e`; **now 1 ahead again** (`c71fe64` has the Tier 1 work).
 - [x] **Re-verify `DrawToolbar` at runtime.** ✅ Done — see §3.
 
-### Tier 0.5 — 🐛 BUGS FOUND THIS SESSION (both pre-existing, not from Tier 1)
-- [ ] **Any click on the canvas while the Draw panel is open adds an invisible junk layer.**
-      Reproduced: 3 plain clicks → 3 new layers, each `width: 0px; height: 0px`, `d=""`,
-      position ≈ `125,66`. Cause: `useDraw`'s `canStartDraw` accepts a pointerdown+pointerup with
-      no movement, and `onEnd` calls `actions.addDrawLayer()` with an empty path. These junk
-      layers are selectable, undoable and get saved. Fix ideas: ignore `onEnd` when the path is
-      empty, or require a minimum drag distance in `canStartDraw`.
-- [ ] **`ShapeContent` still renders a "Business" badge** on the *Arrow* group, after the rail-side
-      badges were removed in `TabList.tsx`/`Sidebar.tsx`. Inconsistent with that cleanup.
-- [ ] `DrawContent`'s geometry is hard-coded (`left: 72`, `top: 44`, `120×250`) rather than themed,
-      so it won't follow light/dark restyling.
+### Tier 0.5 — 🐛 BUGS FOUND LAST SESSION — ✅ BOTH FIXED (`4f57376`)
+- [x] **Clicks on the canvas while the Draw panel is open added invisible junk layers.**
+      Fixed in `DrawContent`: `onEnd` now ignores a stroke whose `path` is empty or whose box is
+      0×0. Verified: 3 canvas clicks add nothing, a real drag still adds exactly one layer.
+- [x] **`ShapeContent` rendered a "Business" badge** on the *Arrow* group. Removed; verified gone.
+- [ ] Still true: `DrawContent`'s geometry is hard-coded (`left: 72`, `top: 44`, `120×250`) rather
+      than themed, so it won't follow light/dark restyling.
+- [ ] Note: the two junk 0×0 layers already **saved into a design** stay there. They are invisible
+      and 0-sized; consider a load-time sweep if it ever matters.
 
 ### Tier 1 — ✅ DONE THIS SESSION
 - [x] **Undo/redo shortcuts.** Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y. Verified: 6→3→6→3→6 layers.
@@ -201,10 +199,29 @@ Test data in the library: `Portraitdfsfe` (used for testing),
 *Note:* `Ctrl+0` resets to **100%**, not the app's 0.43 fit default. Change it if that feels wrong.
 
 ### Tier 2 — alignment & snapping
-- [ ] Smart guides / snapping while dragging.
-- [ ] Align-to-page + distribute + multi-select align.
-- [ ] Every `align` hit in the codebase today is *text* alignment — shapes have nothing.
+- [x] **Smart guides / snapping while dragging.** ✅ `8299006`. `computeSnap` gathers per-axis
+      leading-edge / centre / trailing-edge targets from every other layer plus the page's edges
+      and centre; the axes snap independently. Descendants of the dragged layer are skipped so a
+      group never snaps to itself. Threshold is `SNAP_THRESHOLD` (6 screen px) divided by
+      `pageScale`, so the pull feels the same at any zoom. Guides render as themed 1px lines
+      (`--app-guide`, both themes) inside the scaled page wrapper and clear on pointerup.
+      Verified: 3 units shy of the page centre → snapped to exactly 508/540 on both axes; a drag
+      near a sibling stroke's centre snapped to `524.891` instead; guides clear on drop.
+- [ ] **Align-to-page + distribute + multi-select align.** Not started. Every `align` hit in the
+      codebase today is *text* alignment — shapes have nothing.
+      ⚠️ **Needs a UI decision first:** there is no multi-selection *toolbar*, so align/distribute
+      controls have nowhere obvious to live. Options: a floating bar above the selection (like
+      `DrawToolbar`), a section in `LayerSettings`, or keyboard-only. Ask the user before building.
 - [ ] Optional: rulers, grid.
+
+### Tier 2.5 — 🐛 UNDO DOES NOT COVER DRAGS (found while testing snapping)
+- [ ] `startInteraction`'s move/resize path calls `updateLayerBox` → `patchLayerLive`, which mutates
+      `pagesRef` and calls `setPages` **without** `commit`. So a drag creates **no undo entry**:
+      Ctrl+Z after moving a layer reverts the *previous* committed change instead. Same for resize.
+      Fixing it properly needs a begin/end interaction pair — snapshot the page on pointerdown and
+      `commit` that snapshot on pointerup (a naive `commit` at the end would push the already-moved
+      state as the "past", making undo a no-op). Worth doing: users will expect Ctrl+Z to undo a
+      drag, and Tier 1 just taught them the shortcut exists.
 
 ### Tier 3 — server-backed designs (big unlock)
 - [ ] `GET/POST /api/designs` and `GET/POST /api/uploads` **already exist but are unused** — the
@@ -250,16 +267,15 @@ Working in c:\Users\jo\dev\NecroZine\canva-clone ONLY (ignore NecroZine_Next/Ope
 
 Please read ideas_todo.md in that folder — it's a handover from your previous session.
 
-State: Tier 0 and Tier 1 are DONE. src/vendor/design-editor/index.tsx is MODIFIED but
-UNCOMMITTED (keyboard shortcuts + layer clipboard) — review, typecheck and commit it first.
+State: Tier 0, Tier 0.5 and Tier 1 are DONE and committed. Tier 2 has snapping + smart guides
+working (8299006); align/distribute is not started.
 
-Then pick up Tier 0.5 (the new bugs found last session):
-1. Clicks on the canvas while the Draw panel is open silently add invisible 0x0 draw layers.
-   Fix in useDraw / canStartDraw (reject empty paths).
-2. ShapeContent still shows a "Business" badge on the Arrow group.
+Next, in order of value:
+1. Tier 2.5 — make drags/resizes undoable (they currently create no undo entry).
+2. Tier 2 — align-to-page / distribute / multi-select align. ASK ME FIRST where the controls
+   should live; there is no multi-select toolbar today.
+3. Push master — it is 3 commits ahead of origin.
 
-After that, Tier 2 (smart guides / snapping / align + distribute) is the recommended batch.
-
-Verify with the real browser, not just tsc. Two hard-won test notes are in §3 — slow synthetic
-drags and keep draw + toolbar assertions in a single run, or you'll chase ghosts.
+Verify in the real browser, not just tsc. Test notes are in §3 and the gotchas in §4 — read them
+before writing Playwright code, they will save you an hour.
 ```
