@@ -151,11 +151,15 @@ with them, and creates its own designs. Decisions already taken: orgs with multi
    `GET /media/uploads/:userId/:file` (IDOR — any tenant's uploads readable by guessing), gate
    template writes to an admin, and **make the axios GET interceptor honest** — it rewrites every
    failed GET into a fake `{data: []}` 200, which would silently swallow 401/403.
-2. Autosave. Today a forgotten Save still loses work; only saved state is uploaded.
-3. Helm: `UPLOADS_DIR` is unset while `DESIGNS_DIR`/`TEMPLATES_DIR` point at `/data`, so **uploads are
-   lost on every redeploy**.
-4. Repo history is 192 MB, of which ~175 MB is one 58 MB `output-from-templates.pdf` committed three
-   times. It is untracked now but only a history rewrite removes it.
+2. Tier 2 rulers/grid, Tier 5 export upgrades, or Tier 4 filling the permanently-empty panels.
+3. Conflict handling: last-write-wins means two people on one design clobber each other.
+
+**Also known (not scheduled)**
+- Helm: `UPLOADS_DIR` is unset while `DESIGNS_DIR`/`TEMPLATES_DIR` point at `/data`, so **uploads are
+  lost on every redeploy**.
+- Repo history is ~192 MB packed, of which ~175 MB is one 58 MB `output-from-templates.pdf` committed
+  three separate times. It is untracked and ignored now, so it will not grow; only a history rewrite
+  (force-push, invalidates existing clones) removes it.
 
 **Testing the browser without Playwright MCP:** those tools can be disabled mid-session, and the
 integrated browser's `run_playwright_code` returns no values. Reliable fallback: drive the UI with
@@ -200,6 +204,12 @@ integrated browser's `run_playwright_code` returns no values. Reliable fallback:
 14. `page.getByLabel('Stroke width')` **times out** even though
     `document.querySelector('input[aria-label="Stroke width"]')` exists. If Playwright's label
     lookup fails, fall back to a DOM query inside `page.evaluate`.
+15. **Editing `src/vendor/design-editor/index.tsx` corrupts the live page.** Vite logs
+    `hmr invalidate ... ("useEditor" export is incompatible)` and cascades an update into every
+    editor component, after which `useEditor must be used inside <Editor>` fires and the page is left
+    in a state where **Playwright can no longer click anything** — every element reports "not stable"
+    forever, which looks exactly like a broken layout bug. A plain reload did not clear it; opening a
+    **new browser tab** did. When verifying changes to that file, always use a fresh tab.
 
 Test data in the library: `Portraitdfsfe` (used for testing),
 `Square` (created while reproducing the table bug — safe to delete).

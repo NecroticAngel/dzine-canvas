@@ -179,11 +179,13 @@ owns, so a client can never mutate what we shared.
   - Verified in the browser: two existing local designs were migrated up on first load, a new design
     plus a shape saved with Ctrl+S reached the server, the thumbnail was captured, uploaded, stored
     as a `.jpg` and served back as `200 image/jpeg`, and a second hydrate produced no duplicates.
+- **Phase 2 step 3 — autosave — DONE** (`5eccd51`). The editor tracks a dirty flag and persists
+  1.2 s after the last edit; the library then uploads on its own debounce. It pauses while a text
+  layer is being edited, because persisting flushes the draft out of the textarea and that must not
+  happen under the caret. Verified: adding a shape with no Ctrl+S took the server's copy from 1 to 2
+  non-ROOT layers with a fresh timestamp.
 - Known gap: a local edit newer than the server wins (last-write-wins). Two people editing the same
   design at once will clobber each other; there is no version check or conflict UI yet.
-- **Not yet done: autosave.** Edits still persist only when Save/Ctrl+S is pressed, so 'debounced
-  saving' currently means a debounced *upload of a save*, not saving without asking. Making every
-  edit persist would hook the editor's live-patch/commit flow and is a separate, riskier change.
 - Next: Phase 1 (identity), which is now a single function — `resolveTenantId` in `api/server.js`.
 
 ### Phase 1 — real identity (security floor)
