@@ -46,6 +46,17 @@ CREATE TABLE IF NOT EXISTS members (
 );
 CREATE INDEX IF NOT EXISTS members_by_tenant ON members(tenant_id);
 
+-- Invite-only: a login is rejected unless its email is invited (or is an
+-- admin). Rows are kept after acceptance as a record of who was let in.
+CREATE TABLE IF NOT EXISTS invites (
+  email       TEXT PRIMARY KEY,
+  tenant_id   TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  role        TEXT NOT NULL DEFAULT 'member',
+  invited_by  TEXT,
+  created_at  INTEGER NOT NULL,
+  accepted_at INTEGER
+);
+
 -- Designs belong to the organisation; owner_id is "who created it", not an
 -- access boundary.
 CREATE TABLE IF NOT EXISTS designs (
@@ -189,3 +200,123 @@ export const liveDesignCount = (db, tenantId) =>
       'SELECT count(*) AS c FROM designs WHERE tenant_id = ? AND deleted_at IS NULL',
     )
     .get(tenantId).c;
+
+/* --- Members ------------------------------------------------------------
+ * One row per human login. `external_id` is the IdP subject claim; email is
+ * kept for invites and display, and defaults to the subject when the provider
+ * does not supply one.
+ * --------------------------------------------------------------------- */
+
+export const findMemberByExternalId = (db, externalId) =>
+  db
+    .prepare(
+      `SELECT id, tenant_id AS tenantId, external_id AS externalId,
+              email, name, role
+         FROM members WHERE external_id = ?`,
+    )
+    .get(externalId) ?? null;
+
+export const findMemberByEmail = (db, email) =>
+  db
+    .prepare(
+      `SELECT id, tenant_id AS tenantId, external_id AS externalId,
+              email, name, role
+         FROM members WHERE lower(email) = lower(?)`,
+    )
+    .get(email) ?? null;
+
+export const createMember = (db, member) => {
+  db
+    .prepare(
+      `INSERT INTO members
+         (id, tenant_id, external_id, email, name, role, created_at, last_seen_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      member.id,
+      member.tenantId,
+      member.externalId,
+      member.email ?? null,
+      member.name ?? null,
+      member.role ?? 'member',
+      Date.now(),
+      Date.now(),
+    );
+  return findMemberByExternalId(db, member.externalId);
+};
+
+export const touchMember = (db, externalId) => {
+  db
+    .prepare('UPDATE members SET last_seen_at = ? WHERE external_id = ?')
+    .run(Date.now(), externalId);
+};
+
+export const setMemberRole = (db, externalId, role) => {
+  db
+    .prepare('UPDATE members SET role = ? WHERE external_id = ?')
+    .run(role, externalId);
+};
+
+export const listMembers = (db, tenantId) =>
+  db
+    .prepare(
+      `SELECT id, tenant_id AS tenantId, external_id AS externalId, email, name, role,
+              last_seen_at AS lastSeenAt
+         FROM members WHERE tenant_id = ? ORDER BY created_at`,
+    )
+    .all(tenantId);
+
+/* --- Invites ----------------------------------------------------------- */
+
+export const findInvite = (db, email) =>
+  db
+    .prepare(
+      `SELECT email, tenant_id AS tenantId, role, accepted_at AS acceptedAt
+         FROM invites WHERE lower(email) = lower(?)`,
+    )
+    .get(email) ?? null;
+
+export const createInvite = (db, invite) => {
+  db
+    .prepare(
+      `INSERT INTO invites (email, tenant_id, role, invited_by, created_at, accepted_at)
+       VALUES (?, ?, ?, ?, ?, NULL)
+       ON CONFLICT(email) DO UPDATE SET
+         tenant_id  = excluded.tenant_id,
+         role       = excluded.role,
+         invited_by = excluded.invited_by,
+         accepted_at = NULL`,
+    )
+    .run(
+      invite.email,
+      invite.tenantId,
+      invite.role ?? 'member',
+      invite.invitedBy ?? null,
+      Date.now(),
+    );
+  return findInvite(db, invite.email);
+};
+
+export const acceptInvite = (db, email) => {
+  db
+    .prepare('UPDATE invites SET accepted_at = ? WHERE lower(email) = lower(?)')
+    .run(Date.now(), email);
+};
+
+export const deleteInvite = (db, email) =>
+  db.prepare('DELETE FROM invites WHERE lower(email) = lower(?)').run(email).changes > 0;
+
+export const listInvites = (db, tenantId) =>
+  db
+    .prepare(
+      `SELECT email, tenant_id AS tenantId, role, accepted_at AS acceptedAt,
+              created_at AS createdAt
+         FROM invites WHERE tenant_id = ? ORDER BY created_at`,
+    )
+    .all(tenantId);
+
+export const getTenant = (db, tenantId) =>
+  db.prepare('SELECT id, name FROM tenants WHERE id = ?').get(tenantId) ?? null;
+
+export const listTenants = (db) =>
+  db.prepare('SELECT id, name, created_at AS createdAt FROM tenants ORDER BY name').all();

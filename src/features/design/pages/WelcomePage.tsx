@@ -18,6 +18,7 @@ import {
   type SyncStatus,
 } from '../../../utils/designLibrary';
 import { ThemeToggle, useAppTheme } from '../../../shared/theme';
+import { fetchSession, type Session } from '../../../utils/session';
 import { NewDesignModal } from '../components/NewDesignModal';
 
 type WelcomePageProps = {
@@ -51,11 +52,24 @@ export const WelcomePage = ({ onOpenDesign }: WelcomePageProps) => {
   const [nameDraft, setNameDraft] = useState('');
   const [hydrated, setHydrated] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(getSyncStatus());
+  const [session, setSession] = useState<Session | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const refresh = () => setDesigns(listDesignSummaries());
 
   useEffect(() => subscribeToSync(setSyncStatus), []);
+
+  // Who the API thinks we are. A 401/403 is surfaced by the axios interceptor
+  // as a blocking notice, so there is nothing to handle here beyond display.
+  useEffect(() => {
+    let cancelled = false;
+    void fetchSession().then((result) => {
+      if (!cancelled) setSession(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -229,6 +243,20 @@ export const WelcomePage = ({ onOpenDesign }: WelcomePageProps) => {
             New design
           </button>
         </section>
+
+        {session && (
+          <p
+            css={{
+              margin: '0 0 12px',
+              fontSize: 13,
+              color: 'var(--app-text-muted)',
+            }}
+          >
+            {session.tenant.name} ·{' '}
+            {session.member.email ?? session.member.name ?? 'signed in'}
+            {session.isAdmin ? ' · admin' : ''}
+          </p>
+        )}
 
         <section>
           <div

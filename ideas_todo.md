@@ -134,7 +134,7 @@ with them, and creates its own designs. Decisions already taken: orgs with multi
 
 **Done**
 - `api/db.js` — metadata in `node:sqlite` (built into Node 26: no dependency, no native build).
-  Tables: tenants, members, designs, templates, template_grants. Payloads stay as files.
+  Tables: tenants, members, designs, templates, template_grants, invites. Payloads stay as files.
 - Design writes are **atomic** (temp + rename); thumbnails are real image files served from
   `GET /designs/:id/thumb`, not data URLs.
 - `GET /designs` no longer parses every design body — it was O(total bytes on disk).
@@ -144,15 +144,33 @@ with them, and creates its own designs. Decisions already taken: orgs with multi
   captured/uploaded/served, and re-hydrating does not duplicate.
 - Save button shows Saving… / Retrying… rather than claiming "Saved" on the local write alone.
 
+**Done — Phase 1, identity (the security floor)**
+- `api/identity.js` verifies tokens itself on `node:crypto` — no dependency added. JWKS fetched and
+  cached, JWK → key via `createPublicKey({ format: 'jwk' })`, RS/PS/ES through `verifySignature`,
+  HMAC through `createHmac` + `timingSafeEqual`. `alg: none` and a missing `kid` are rejected;
+  `exp`/`nbf`/`iss`/`aud` are all checked.
+- Three modes from env: `oidc` (`OIDC_ISSUER`/`OIDC_AUDIENCE`), `headers` (a proxy that asserts
+  identity), or `dev`. **Production with none configured refuses to boot** rather than falling open.
+- **Invite-only provisioning.** An unknown `sub` is rejected unless their email matches a pending
+  invite; `AUTH_ADMIN_EMAILS` get the staff tenant as `admin`. Every rejection has a readable
+  `detail` the overlay can show.
+- **`?userId=` and `X-User-Id` no longer exist** — tenant comes from the token, everywhere. The
+  upload IDOR is closed and template writes need `admin`. CORS is an allow-list now.
+- `GET /me` + `src/utils/session.ts` + `SessionNotice`: a 401/403 raises one blocking overlay
+  instead of a silently empty screen. The axios interceptor only rewrites our own relative-API
+  failures and always re-throws, so a CDN 403 (Google Fonts) no longer signs anyone out.
+- Verified over HTTP with a signed-token/JWKS harness (no token, garbage, tampered signature,
+  `alg: none`, expired, wrong issuer, wrong audience → 401 with the right `detail`; uninvited → 403;
+  spoofing ignored; client template POST 403 vs admin 201; cross-tenant media 403; anonymous upload
+  read 401; designs land in the right tenant; invite flow provisions correctly) and in the browser
+  (dev mode still sees its 3 designs, and adding a shape autosaved — server went 2 → 3 layers).
+
 **Next**
-1. **Phase 1 — identity.** Replace the body of `resolveTenantId` in `api/server.js` (the single seam)
-   with a verified token check against a configurable JWKS/issuer URL. Then: delete the `?userId=` /
-   `X-User-Id` trust (**anyone can read anyone's designs today**), delete
-   `GET /media/uploads/:userId/:file` (IDOR — any tenant's uploads readable by guessing), gate
-   template writes to an admin, and **make the axios GET interceptor honest** — it rewrites every
-   failed GET into a fake `{data: []}` 200, which would silently swallow 401/403.
-2. Tier 2 rulers/grid, Tier 5 export upgrades, or Tier 4 filling the permanently-empty panels.
-3. Conflict handling: last-write-wins means two people on one design clobber each other.
+1. **Phase 3 — sharing**: tenant-private templates, `template_grants`, an admin surface to publish
+   and share, and "use template → copy into tenant" end to end. `requireAdmin` and `GET /me`
+   already give the UI the role it needs.
+2. Conflict handling: last-write-wins means two people on one design clobber each other.
+3. Tier 2 rulers/grid, Tier 5 export upgrades, or Tier 4 filling the permanently-empty panels.
 
 **Also known (not scheduled)**
 - Helm: `UPLOADS_DIR` is unset while `DESIGNS_DIR`/`TEMPLATES_DIR` point at `/data`, so **uploads are
@@ -163,7 +181,8 @@ with them, and creates its own designs. Decisions already taken: orgs with multi
 
 **Testing the browser without Playwright MCP:** those tools can be disabled mid-session, and the
 integrated browser's `run_playwright_code` returns no values. Reliable fallback: drive the UI with
-`click_element` / `read_page` and assert against the API from the terminal (`Invoke-RestMethod`).
+`click_element` / `read_page` and assert against the API from the terminal — but see **gotcha 16**
+before you trust an `Invoke-RestMethod` assertion.
 
 ---
 
@@ -210,6 +229,13 @@ integrated browser's `run_playwright_code` returns no values. Reliable fallback:
     in a state where **Playwright can no longer click anything** — every element reports "not stable"
     forever, which looks exactly like a broken layout bug. A plain reload did not clear it; opening a
     **new browser tab** did. When verifying changes to that file, always use a fresh tab.
+16. **`Invoke-RestMethod` silently collapses a top-level JSON array into ONE object** whose properties
+    are themselves arrays. `$x[0].name` then returns *all* the names, and
+    `Where-Object { $_.name -eq 'Portrait' }` matches **everything**, because PowerShell's `-eq`
+    filters an array rather than comparing it. It looks exactly like an API bug and is not one.
+    Assert with `@(((Invoke-WebRequest $url).Content | ConvertFrom-Json))`, which gives a real
+    `Object[]`. (Cost me three confused tool calls; `Invoke-RestMethod` is fine for single objects
+    such as `/me`.)
 
 Test data in the library: `Portraitdfsfe` (used for testing),
 `Square` (created while reproducing the table bug — safe to delete).
@@ -334,15 +360,20 @@ Working in c:\Users\jo\dev\NecroZine\canva-clone ONLY (ignore NecroZine_Next/Ope
 Please read ideas_todo.md in that folder — it's a handover from your previous session.
 
 State: editor features are done through Tier 2 (snapping, smart guides, align/distribute, undoable
-drags, layer clipboard, undo/redo). The multi-tenant work has started — read
+drags, layer clipboard, undo/redo). The multi-tenant work is well underway — read
 `docs/plans/multi-tenant.md` **and** §3.5 first; §3.5 lists exactly what is done and what is next.
+Phases 1 and 2 are complete: designs live in the server's SQLite + files, and every request is
+authenticated against a verified OIDC token (invite-only, per-tenant isolation, admin-gated
+templates). Dev mode still works with no configuration.
 
 Next, in order:
-1. **Phase 1 — identity.** One function to replace: `resolveTenantId` in `api/server.js`. Also
-   remove the spoofable `?userId=` trust, the IDOR in `GET /media/uploads/:userId/:file`, and make
-   the axios GET interceptor stop rewriting failures into fake empty 200s.
-2. **Autosave** — today a forgotten Save loses work; only saved state is uploaded.
-3. Tier 2 rulers/grid, Tier 5 export upgrades, or Tier 4 filling the permanently-empty panels.
+1. **Phase 3 — sharing.** Tenant-private templates, `template_grants`, an admin surface to publish
+   and share, "use template → copy into tenant" end to end.
+2. **Phase 4 — hardening.** Start with the Helm bug: `UPLOADS_DIR` is unset while
+   `DESIGNS_DIR`/`TEMPLATES_DIR` point at `/data`, so **uploads are lost on every redeploy**. Then
+   backups, rate limits, upload MIME allow-list, audit trail.
+3. Conflict handling (last-write-wins clobbers), Tier 2 rulers/grid, Tier 5 export upgrades, or
+   Tier 4 filling the permanently-empty panels.
 
 Verify in the real browser, not just tsc. Read §3, §3.5 and the §4 gotchas before writing Playwright
 code — they will save you an hour.

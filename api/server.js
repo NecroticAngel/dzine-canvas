@@ -15,15 +15,29 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { getStoragePaths, storageConfig } from './storagePaths.js';
 import {
+  createInvite,
   deleteDesign,
+  deleteInvite,
   ensureTenant,
   getDesign,
+  getTenant,
   knownDesignIds,
   listDesigns,
+  listInvites,
+  listMembers,
+  listTenants,
   liveDesignCount,
   openDatabase,
   upsertDesign,
 } from './db.js';
+import {
+  authConfig,
+  authConfigError,
+  createIdentityMiddleware,
+  describeAuth,
+  requireAdmin,
+  resolveIdentity,
+} from './identity.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BASE_PATH = `/${String(process.env.BASE_PATH || '')
@@ -44,30 +58,63 @@ for (const file of readdirSync(SEED_TEMPLATES_DIR).filter((name) =>
   }
 }
 
+// Fail closed: a deployment with no working authentication must not start and
+// then quietly trust whatever it is told.
+if (authConfigError) {
+  console.error(`\nRefusing to start: ${authConfigError}\n`);
+  process.exit(1);
+}
+
 const app = express();
 const api = express.Router();
-api.use(cors({ origin: true }));
+
+/**
+ * CORS is an allow-list when CORS_ORIGINS is set (comma separated). Reflecting
+ * whatever origin asks — which is what this used to do — lets any site drive
+ * the API with the browser's ambient credentials.
+ */
+const allowedOrigins = String(process.env.CORS_ORIGINS || '')
+  .split(',')
+  .map((value) => value.trim())
+  .filter(Boolean);
+api.use(
+  cors(
+    allowedOrigins.length
+      ? { origin: allowedOrigins, credentials: true }
+      : { origin: true },
+  ),
+);
 api.use(express.json({ limit: '30mb' }));
 api.use(express.static(bootPaths.publicDir));
 
-/**
- * The single identity seam.
- *
- * Phase 1 replaces this body with a verified token/session lookup; every caller
- * below already asks for a *tenant*, so nothing else has to change. Until then
- * it keeps the old, unauthenticated behaviour, where the caller simply asserts
- * who they are. That is a development stopgap and the first thing Phase 1
- * removes — see docs/plans/multi-tenant.md.
- */
-const resolveTenantId = (req) =>
-  req.header('x-user-id') ||
-  req.query.userId ||
-  storageConfig.defaultUserId;
+const identity = createIdentityMiddleware(db);
 
-/** @deprecated superseded by resolveTenantId; still used for upload URLs. */
-const resolveUserId = resolveTenantId;
+// The container probe and the endpoint index stay reachable without credentials;
+// everything else resolves an identity first.
+const PUBLIC_ROUTES = new Set(['/health', '/']);
+api.use((req, res, next) => {
+  if (PUBLIC_ROUTES.has(req.path)) {
+    // Resolved opportunistically: /health answers container probes without
+    // credentials but shows detail to a signed-in administrator, so a failure
+    // here must not reject the request.
+    resolveIdentity(db, req)
+      .then((result) => {
+        if (!result.reason) req.identity = result;
+      })
+      .catch(() => {
+        /* anonymous is a valid outcome for a public route */
+      })
+      .finally(next);
+    return;
+  }
+  void identity(req, res, next);
+});
 
-const pathsFor = (req) => getStoragePaths(resolveTenantId(req));
+// The tenant every request belongs to. Resolved from a verified identity — a
+// caller can no longer name the tenant it wants to read.
+const tenantOf = (req) => req.identity.tenantId;
+
+const pathsFor = (req) => getStoragePaths(tenantOf(req));
 
 const absoluteUrl = (req, pathname) => {
   if (/^https?:\/\//i.test(pathname)) return pathname;
@@ -212,7 +259,7 @@ const readUploads = (uploadsDir, req) => {
       const type = /\.svg$/i.test(file) ? 'svg' : 'image';
       const url = absoluteUrl(
         req,
-        `/media/uploads/${encodeURIComponent(resolveUserId(req))}/${encodeURIComponent(file)}`,
+        `/media/uploads/${encodeURIComponent(tenantOf(req))}/${encodeURIComponent(file)}`,
       );
       return {
         id: file,
@@ -238,6 +285,13 @@ const upload = multer({
 });
 
 api.get('/media/uploads/:userId/:file', (req, res) => {
+  // Kept because URLs of this shape are already embedded in saved designs, but
+  // the tenant in the path must match the caller. Previously any folder could be
+  // read by anyone who guessed its name.
+  if (req.params.userId !== tenantOf(req) && !req.identity.isAdmin) {
+    res.status(403).json({ error: 'Not your upload', code: 'forbidden' });
+    return;
+  }
   const { uploadsDir } = getStoragePaths(req.params.userId);
   const filePath = path.join(uploadsDir, path.basename(req.params.file));
   if (!existsSync(filePath)) {
@@ -248,10 +302,17 @@ api.get('/media/uploads/:userId/:file', (req, res) => {
 });
 
 api.get('/health', (req, res) => {
+  // Public, because this is what container probes hit. The detail below — which
+  // includes resolved server paths — is only for signed-in administrators.
+  if (!req.identity?.isAdmin) {
+    res.json({ ok: true });
+    return;
+  }
   const paths = pathsFor(req);
   ensureTenant(db, paths.userId);
   res.json({
     ok: true,
+    authMode: authConfig.mode,
     userId: paths.userId,
     templates: readTemplates(paths.templatesDir).length,
     // Straight from the metadata store; counting designs no longer parses them.
@@ -268,8 +329,24 @@ api.get('/health', (req, res) => {
   });
 });
 
+/** Who the caller is, and which workspace they belong to. */
+api.get('/me', (req, res) => {
+  const { member, tenantId, isAdmin } = req.identity;
+  res.json({
+    member: {
+      id: member.id,
+      email: member.email,
+      name: member.name,
+      role: member.role,
+    },
+    tenant: { id: tenantId, name: getTenant(db, tenantId)?.name ?? tenantId },
+    isAdmin,
+    authMode: authConfig.mode,
+  });
+});
+
 api.get('/', (req, res) => {
-  const paths = pathsFor(req);
+  // Public endpoint index. Deliberately exposes no server paths and no tenant data.
   res.type('html').send(`<!doctype html>
 <html><head><meta charset="utf-8"><title>NecroZine Storage API</title>
 <style>
@@ -279,28 +356,66 @@ api.get('/', (req, res) => {
   pre{background:#f8fafc;padding:12px;border-radius:8px;overflow:auto;font-size:12px}
 </style></head><body>
   <h1>NecroZine Storage API</h1>
-  <p>Editor: <a href="http://127.0.0.1:4200/">http://127.0.0.1:4200/</a></p>
-  <p>User scope: <code>${paths.userId}</code> (override with <code>X-User-Id</code>)</p>
+  <p>Authentication: <code>${authConfig.mode}</code></p>
   <ul>
     <li><a href="${BASE_PATH}/api/health"><code>GET ${BASE_PATH}/api/health</code></a></li>
-    <li><a href="${BASE_PATH}/api/templates"><code>GET ${BASE_PATH}/api/templates</code></a></li>
-    <li><a href="${BASE_PATH}/api/designs"><code>GET ${BASE_PATH}/api/designs</code></a></li>
-    <li><a href="${BASE_PATH}/api/uploads"><code>GET ${BASE_PATH}/api/uploads</code></a></li>
+    <li><code>GET ${BASE_PATH}/api/me</code> — who you are (needs credentials)</li>
+    <li><code>GET ${BASE_PATH}/api/templates</code></li>
+    <li><code>GET ${BASE_PATH}/api/designs</code></li>
+    <li><code>GET ${BASE_PATH}/api/uploads</code></li>
   </ul>
-  <h2>Active paths</h2>
-  <pre>${JSON.stringify(
-    {
-      storageRoot: paths.storageRoot,
-      templatesDir: paths.templatesDir,
-      designsDir: paths.designsDir,
-      uploadsDir: paths.uploadsDir,
-      publicDir: paths.publicDir,
-      basePath: BASE_PATH || '/',
-    },
-    null,
-    2,
-  )}</pre>
 </body></html>`);
+});
+
+/** Admin: tenants, invites and members. These are what make invite-only workable. */
+api.get('/admin/tenants', requireAdmin, (_req, res) => {
+  res.json(listTenants(db));
+});
+
+api.post('/admin/tenants', requireAdmin, (req, res) => {
+  const id = safeId(req.body?.id);
+  const name =
+    typeof req.body?.name === 'string' && req.body.name.trim()
+      ? req.body.name.trim()
+      : id;
+  ensureTenant(db, id, name);
+  res.status(201).json(getTenant(db, id));
+});
+
+api.get('/admin/invites', requireAdmin, (req, res) => {
+  const tenantId = req.query.tenantId
+    ? String(req.query.tenantId)
+    : req.identity.tenantId;
+  res.json(listInvites(db, tenantId));
+});
+
+api.post('/admin/invites', requireAdmin, (req, res) => {
+  const email = String(req.body?.email ?? '').trim().toLowerCase();
+  if (!email.includes('@')) {
+    res.status(400).json({ error: 'A valid email is required' });
+    return;
+  }
+  const tenantId = safeId(req.body?.tenantId ?? req.identity.tenantId);
+  ensureTenant(db, tenantId, String(req.body?.tenantName ?? tenantId));
+  res.status(201).json(
+    createInvite(db, {
+      email,
+      tenantId,
+      role: req.body?.role === 'admin' ? 'admin' : 'member',
+      invitedBy: req.identity.member.id,
+    }),
+  );
+});
+
+api.delete('/admin/invites/:email', requireAdmin, (req, res) => {
+  res.status(deleteInvite(db, req.params.email) ? 204 : 404).end();
+});
+
+api.get('/admin/members', requireAdmin, (req, res) => {
+  const tenantId = req.query.tenantId
+    ? String(req.query.tenantId)
+    : req.identity.tenantId;
+  res.json(listMembers(db, tenantId));
 });
 
 /** Templates */
@@ -331,7 +446,7 @@ api.get('/templates/:id', (req, res) => {
   });
 });
 
-api.post('/templates', (req, res) => {
+api.post('/templates', requireAdmin, (req, res) => {
   const { templatesDir } = pathsFor(req);
   const elements = req.body?.elements;
   if (!isSerializedPage(elements)) {
@@ -362,7 +477,7 @@ api.post('/templates', (req, res) => {
   res.status(201).json(record);
 });
 
-api.delete('/templates/:id', (req, res) => {
+api.delete('/templates/:id', requireAdmin, (req, res) => {
   const { templatesDir } = pathsFor(req);
   const found = readTemplates(templatesDir).find((item) => item.id === req.params.id);
   if (!found) {
@@ -534,7 +649,7 @@ api.post('/uploads', upload.single('file'), (req, res) => {
     res.status(400).json({ error: 'Expected multipart field "file"' });
     return;
   }
-  const userId = resolveUserId(req);
+  const userId = tenantOf(req);
   const type = /\.svg$/i.test(req.file.filename) ? 'svg' : 'image';
   const url = absoluteUrl(
     req,
@@ -611,7 +726,13 @@ const server = app.listen(storageConfig.port, storageConfig.host, (err) => {
   console.log(`DESIGNS_DIR     ${bootPaths.designsDir}`);
   console.log(`UPLOADS_DIR     ${bootPaths.uploadsDir}`);
   console.log(`PUBLIC_DIR      ${bootPaths.publicDir}`);
-  console.log(`Default user    ${bootPaths.userId}`);
+  console.log(`AUTH            ${describeAuth()}`);
+  if (authConfig.mode === 'dev') {
+    console.log('');
+    console.log('!! AUTH_MODE=dev: every request is the development user.');
+    console.log('!! Do not deploy this. Set OIDC_ISSUER, or AUTH_MODE=headers.');
+    console.log('');
+  }
 });
 
 server.on('error', (err) => {

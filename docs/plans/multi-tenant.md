@@ -186,9 +186,43 @@ owns, so a client can never mutate what we shared.
   non-ROOT layers with a fresh timestamp.
 - Known gap: a local edit newer than the server wins (last-write-wins). Two people editing the same
   design at once will clobber each other; there is no version check or conflict UI yet.
-- Next: Phase 1 (identity), which is now a single function — `resolveTenantId` in `api/server.js`.
+- **Phase 1 — real identity — DONE.** `api/identity.js` is the security floor and `resolveTenantId`
+  in `api/server.js` is now `tenantOf(req)`.
+  - **Three modes from env.** `oidc` when `OIDC_ISSUER` is set (`OIDC_AUDIENCE`, or
+    `OIDC_AUDIENCE_ANY=1`); `headers` for a proxy that asserts identity itself; `dev` otherwise.
+    Production with none of them **refuses to boot** rather than falling open.
+  - **Verification is done by hand on `node:crypto`** — no dependency added. The JWKS is fetched and
+    cached, JWK → key via `createPublicKey({ format: 'jwk' })`, RS/PS/ES through `verifySignature`,
+    HMAC through `createHmac` + `timingSafeEqual`. `alg: none` and a missing `kid` are rejected.
+    `exp`/`nbf` are checked with `AUTH_CLOCK_LEEWAY_SECONDS`; `iss`/`aud` exactly.
+  - **Invite-only provisioning.** First sight of a `sub` creates the row, but a valid stranger is
+    rejected with `not-invited` unless their email matches a pending invite. `AUTH_ADMIN_EMAILS`
+    land in the staff tenant as `admin`. Every rejection carries a readable `detail`.
+  - **`?userId=` and `X-User-Id` no longer exist.** Tenant is derived from the token — designs,
+    uploads, thumbnails and templates all go through it.
+  - **The upload IDOR is closed** (own tenant or staff only) and **template writes need `admin`**;
+    CORS became an allow-list via `CORS_ORIGINS`.
+  - `GET /me`, `src/utils/session.ts`, `SessionNotice` — a 401/403/`no-workspace` raises one blocking
+    overlay with "Sign in again" / "Retry" instead of the old silently-empty screens.
+  - **The axios interceptor is honest.** The fake `{data: [], status: 200}` rewrite now applies only
+    to our own relative API URLs *and* requires an error `code`, then always re-throws. A CDN 403
+    (Google Fonts) can no longer sign anyone out.
+  - `PUBLIC_ROUTES` (`/health`, `/`) resolve identity **opportunistically**, so an anonymous caller
+    gets `{ok:true}` while an admin gets paths — no leak either way.
+  - **Verified over HTTP** against a JWKS harness: no token, garbage, tampered signature,
+    `alg: none`, expired, wrong issuer and wrong audience all return 401 with the correct `detail`;
+    a valid but uninvited subject returns 403; `?userId=`/`X-User-Id` spoofing is ignored and always
+    yields the caller's own designs; a client POST/DELETE of a template is 403 while an admin's is
+    201; a client reading `staff` media is 403; anonymous upload reads went from wide open to 401
+    (owner and staff still 200); a client's design landed in `users/acme/designs/` while the staff
+    tenant saw zero designs; the invite flow provisioned the member into the right tenant and set
+    `acceptedAt`.
+  - **Verified in the browser, dev mode:** the existing `default` tenant still sees its 3 designs, the
+    session line reads `default · dev@localhost · admin`, and adding a shape autosaved through
+    `tenantOf(req)` — the server's copy went from 2 to 3 non-ROOT layers. The write path is intact.
+- Next: **Phase 3 — sharing**.
 
-### Phase 1 — real identity (security floor)
+### Phase 1 — real identity (security floor) — ✅ DONE, all 8 items (see Progress above)
 1. Decide the IdP + claim mapping (`sub` → `members.external_id`; first login provisions or is
    rejected unless invited).
 2. Add `api/identity.js`: verify the token, resolve `member` + `tenant`, seed `node:sqlite`.
@@ -202,7 +236,7 @@ owns, so a client can never mutate what we shared.
    "empty" instead of "logged out".
 8. CORS: `origin: true` reflects any origin (`server.js:37`) → allow-list.
 
-### Phase 2 — designs on the server (no auth dependency)
+### Phase 2 — designs on the server (no auth dependency) — ✅ DONE, all 6 items
 1. `node:sqlite` schema + migrations on boot; keep the JSON files as the payload.
 2. Replace the scanning `readDesigns` with SQL; **atomic writes** (temp file + rename) — a crash
    mid-write currently corrupts a design.
@@ -224,9 +258,14 @@ and an audit trail of who changed what.
 
 ## 8. Open questions
 
-1. Which IdP does `dzine-canvas-demo-oidc` point at, and what does it inject? (blocks Phase 1)
-2. When an unknown person logs in successfully, do we auto-create a tenant, or reject them unless
-   invited? Invite-only is safer for a client product.
+1. ~~Which IdP does `dzine-canvas-demo-oidc` point at, and what does it inject?~~ **Moot.** Phase 1 is
+   provider-agnostic: it reads any standard OIDC discovery document, so the provider is a deploy-time
+   choice via `OIDC_ISSUER`/`OIDC_AUDIENCE`. Nobody has pointed it at a real IdP yet — the first real
+   deployment needs someone to confirm what the cluster's ingress actually injects (the `headers`
+   mode exists for a proxy that asserts identity itself, e.g. Coder/oauth2-proxy).
+2. ~~When an unknown person logs in successfully, do we auto-create a tenant, or reject them unless
+   invited?~~ **Answered: invite-only.** A valid but unknown subject is rejected with `not-invited`
+   unless their email matches a pending invite, or they are in `AUTH_ADMIN_EMAILS`.
 3. Does one member's design belong to them personally or to the whole tenant? (Currently modelled as
    tenant-owned with an `owner_id`, so both are possible.)
 4. Do we keep `replicas: 1` + `Recreate`, i.e. accept downtime on deploy? Fine for a handful of

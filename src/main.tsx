@@ -3,6 +3,8 @@ import reactDomClient from 'react-dom/client';
 import './styles.css';
 import axios from 'axios';
 import Page from './pages/Main';
+import { SessionNotice } from './shared/components/SessionNotice';
+import { notifySessionProblem } from './utils/session';
 
 type RootApi = {
   createRoot?: typeof import('react-dom/client').createRoot;
@@ -24,8 +26,15 @@ axios.defaults.timeout = 2500;
 axios.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error?.config?.method === 'get') {
-      return { data: [], status: 200, statusText: 'OK', headers: {}, config: error.config };
+    // Previously every failed GET was rewritten into an empty 200. That made an
+    // expired session look identical to an empty account, so the rejection is
+    // left intact for the call sites to handle and real session problems are
+    // reported instead.
+    const url = String(error?.config?.url ?? '');
+    if (!/^https?:\/\//i.test(url)) {
+      // Relative means our own API. An absolute URL is somebody else's service,
+      // and its 401/403 says nothing about our session.
+      notifySessionProblem(error?.response?.status, error?.response?.data?.code);
     }
     return Promise.reject(error);
   },
@@ -55,5 +64,6 @@ const root = createRoot(document.getElementById('root') as HTMLElement);
 root.render(
   <RootErrorBoundary>
     <Page />
+    <SessionNotice />
   </RootErrorBoundary>,
 );
