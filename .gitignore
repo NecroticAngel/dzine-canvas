@@ -23,5 +23,9 @@ pnpm-debug.log*
 api/data/db.sqlite*
 api/data/users/
 
+# Template previews are copied in from the packaged assets on first boot, so the
+# JSON payloads next to them are source but these are not.
+api/data/templates/thumbs/
+
 # Generated exports (a 58 MB version of output-from-templates.pdf sits in history).
 output-*.pdf
