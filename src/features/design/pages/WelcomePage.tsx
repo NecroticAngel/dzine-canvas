@@ -1,3 +1,4 @@
+import axios from 'axios';
 import {
   type FormEvent,
   useEffect,
@@ -5,6 +6,7 @@ import {
   useState,
 } from 'react';
 import {
+  adoptRemoteDesign,
   createBlankPages,
   createDesignInLibrary,
   deleteDesignInLibrary,
@@ -30,6 +32,14 @@ type RenameDialog = {
   initial: string;
 };
 
+type TemplateSummary = {
+  id: string;
+  name: string;
+  img: string;
+  /** Published by us and shared with this workspace, rather than its own. */
+  shared?: boolean;
+};
+
 const formatUpdated = (ts: number) => {
   try {
     return new Date(ts).toLocaleString(undefined, {
@@ -53,6 +63,9 @@ export const WelcomePage = ({ onOpenDesign }: WelcomePageProps) => {
   const [hydrated, setHydrated] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(getSyncStatus());
   const [session, setSession] = useState<Session | null>(null);
+  const [templates, setTemplates] = useState<TemplateSummary[]>([]);
+  const [usingTemplate, setUsingTemplate] = useState<string | null>(null);
+  const [templateError, setTemplateError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const refresh = () => setDesigns(listDesignSummaries());
@@ -87,6 +100,25 @@ export const WelcomePage = ({ onOpenDesign }: WelcomePageProps) => {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    // Templates this workspace can use: ours shared with it, plus its own.
+    void (async () => {
+      try {
+        const response = await axios.get<TemplateSummary[]>('/templates');
+        if (cancelled) return;
+        setTemplates(Array.isArray(response.data) ? response.data : []);
+      } catch {
+        // Never break the page over this; a 401/403 is already showing a
+        // blocking notice from the axios interceptor.
+        if (!cancelled) setTemplates([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!dialog) return;
     setNameDraft(dialog.initial);
     const frame = window.requestAnimationFrame(() => {
@@ -112,6 +144,43 @@ export const WelcomePage = ({ onOpenDesign }: WelcomePageProps) => {
     );
     setShowNewDesign(false);
     onOpenDesign(created.id);
+  };
+
+  /**
+   * "Use this template" makes a copy in this workspace and opens it, so a
+   * shared template is never the thing being edited.
+   */
+  const useTemplate = async (template: TemplateSummary) => {
+    if (usingTemplate) return;
+    setUsingTemplate(template.id);
+    setTemplateError(null);
+    try {
+      const response = await axios.post<{
+        id?: string;
+        name?: string;
+        thumbUrl?: string | null;
+      }>(`/templates/${encodeURIComponent(template.id)}/use`, {
+        name: template.name,
+      });
+      const created = response.data?.id
+        ? await adoptRemoteDesign(response.data.id, {
+            name: response.data.name,
+            thumbUrl: response.data.thumbUrl ?? undefined,
+          })
+        : null;
+      refresh();
+      if (!created) {
+        setTemplateError(
+          'The copy was created, but opening it failed. Reload to see it.',
+        );
+        return;
+      }
+      onOpenDesign(created.id);
+    } catch {
+      setTemplateError('Could not use that template. Try again.');
+    } finally {
+      setUsingTemplate(null);
+    }
   };
 
   const handleSubmit = (event?: FormEvent) => {
@@ -258,6 +327,153 @@ export const WelcomePage = ({ onOpenDesign }: WelcomePageProps) => {
           </p>
         )}
 
+        {templates.length > 0 && (
+          <section css={{ marginBottom: 44 }}>
+            <div
+              css={{
+                display: 'flex',
+                alignItems: 'baseline',
+                justifyContent: 'space-between',
+                gap: 12,
+                marginBottom: 16,
+              }}
+            >
+              <h2
+                css={{
+                  margin: 0,
+                  fontSize: 13,
+                  letterSpacing: '0.08em',
+                  textTransform: 'uppercase',
+                  color: 'var(--app-text-muted)',
+                  fontWeight: 800,
+                }}
+              >
+                Start from a template
+              </h2>
+              <span css={{ color: 'var(--app-text-muted)', fontSize: 13 }}>
+                {templates.length} available
+              </span>
+            </div>
+
+            {templateError && (
+              <p
+                css={{
+                  margin: '0 0 12px',
+                  fontSize: 13,
+                  color: '#d64545',
+                }}
+              >
+                {templateError}
+              </p>
+            )}
+
+            <div
+              css={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))',
+                gap: 14,
+              }}
+            >
+              {templates.map((template) => (
+                <button
+                  key={template.id}
+                  type="button"
+                  disabled={Boolean(usingTemplate)}
+                  onClick={() => void useTemplate(template)}
+                  title={
+                    template.shared
+                      ? `${template.name} — shared with you`
+                      : `${template.name} — yours`
+                  }
+                  css={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 8,
+                    padding: 10,
+                    textAlign: 'left',
+                    cursor: usingTemplate ? 'progress' : 'pointer',
+                    borderRadius: 12,
+                    border: '1px solid var(--app-border)',
+                    background: 'var(--app-surface)',
+                    color: 'inherit',
+                    opacity:
+                      usingTemplate && usingTemplate !== template.id ? 0.5 : 1,
+                    transition: 'transform .12s ease, border-color .12s ease',
+                    ':hover': {
+                      transform: 'translateY(-2px)',
+                      borderColor: 'var(--app-border-strong)',
+                    },
+                  }}
+                >
+                  {template.img ? (
+                    <img
+                      alt={template.name}
+                      loading="lazy"
+                      src={template.img}
+                      css={{
+                        display: 'block',
+                        width: '100%',
+                        height: 'auto',
+                        borderRadius: 8,
+                        border: '1px solid var(--app-border)',
+                      }}
+                    />
+                  ) : (
+                    <div
+                      css={{
+                        height: 88,
+                        borderRadius: 8,
+                        border: '1px dashed var(--app-border-strong)',
+                      }}
+                    />
+                  )}
+                  <span
+                    css={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 8,
+                    }}
+                  >
+                    <span
+                      css={{
+                        fontWeight: 700,
+                        fontSize: 14,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {template.name}
+                    </span>
+                    <span
+                      css={{
+                        flexShrink: 0,
+                        fontSize: 10,
+                        fontWeight: 700,
+                        letterSpacing: '0.04em',
+                        textTransform: 'uppercase',
+                        padding: '2px 7px',
+                        borderRadius: 999,
+                        color: template.shared ? '#fff' : 'var(--app-text-muted)',
+                        background: template.shared
+                          ? 'rgba(61,142,255,.9)'
+                          : 'rgba(127,127,127,.14)',
+                      }}
+                    >
+                      {usingTemplate === template.id
+                        ? 'Opening…'
+                        : template.shared
+                          ? 'Shared'
+                          : 'Yours'}
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
+
         <section>
           <div
             css={{
@@ -357,10 +573,12 @@ export const WelcomePage = ({ onOpenDesign }: WelcomePageProps) => {
                     position: 'relative',
                   }}
                 >
-                  {design.thumbnail ? (
+                  {design.thumbnail || design.thumbUrl ? (
                     <img
                       alt={`${design.name} preview`}
-                      src={design.thumbnail}
+                      // A design created on another machine has no local data
+                      // URL, so fall back to the preview the server keeps.
+                      src={design.thumbnail ?? design.thumbUrl}
                       css={{
                         position: 'absolute',
                         inset: 18,

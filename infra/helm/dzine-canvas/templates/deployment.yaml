@@ -24,12 +24,17 @@ spec:
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           env:
+            # One storage root, and the per-tenant layout follows from it:
+            #   /data/templates            shared templates
+            #   /data/users/{tenant}/designs
+            #   /data/users/{tenant}/uploads
+            # This used to set DESIGNS_DIR=/data/designs with no {userId}, which
+            # gave every tenant the same directory, and left UPLOADS_DIR unset
+            # so uploads landed in the container and vanished on redeploy.
             - name: BASE_PATH
               value: {{ .Values.basePath | quote }}
-            - name: DESIGNS_DIR
-              value: /data/designs
-            - name: TEMPLATES_DIR
-              value: /data/templates
+            - name: STORAGE_ROOT
+              value: /data
           ports:
             - name: http
               containerPort: 4201

@@ -56,11 +56,16 @@ api/public/                       static thumbs (NECROZINE_PUBLIC_DIR)
 | `STORAGE_ROOT` or `NECROZINE_STORAGE_ROOT` | `api/data` | Root for templates + `users/…` |
 | `NECROZINE_TEMPLATES_DIR` / `TEMPLATES_DIR` | `{STORAGE_ROOT}/templates` | Shared templates |
 | `NECROZINE_PUBLIC_DIR` / `PUBLIC_DIR` | `api/public` | Static files (`/thumbs/…`) |
-| `NECROZINE_DESIGNS_DIR` / `DESIGNS_DIR` | `{STORAGE_ROOT}/users/{userId}/designs` | User design JSON |
-| `NECROZINE_UPLOADS_DIR` / `UPLOADS_DIR` | `{STORAGE_ROOT}/users/{userId}/uploads` | User uploads |
-| `NECROZINE_DEFAULT_USER_ID` | `default` | User when no header/query |
+| `NECROZINE_DESIGNS_DIR` / `DESIGNS_DIR` | `{STORAGE_ROOT}/users/{userId}/designs` | Tenant design JSON |
+| `NECROZINE_UPLOADS_DIR` / `UPLOADS_DIR` | `{STORAGE_ROOT}/users/{userId}/uploads` | Tenant uploads |
+| `NECROZINE_DEFAULT_USER_ID` | `default` | Tenant used before identity resolves |
 
 Absolute paths win. Relative paths resolve from the `canva-clone/` project root.
+
+> **`DESIGNS_DIR` and `UPLOADS_DIR` must contain `{userId}`.** Without it every tenant
+> resolves to the same directory, so tenants would read and overwrite each other's files. The
+> server refuses to start if either is missing. Prefer setting only `STORAGE_ROOT` and letting
+> the layout follow from it.
 
 **Per-user placeholders:** set designs/uploads with `{userId}`:
 

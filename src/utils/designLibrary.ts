@@ -243,6 +243,49 @@ export const openDesignInLibrary = (id: string): SavedDesign | null => {
   return design;
 };
 
+/**
+ * Pull one design the server has and this browser doesn't.
+ *
+ * `hydrateLibrary()` runs once per page load, so a design created moments ago
+ * server-side — the copy made by "use this template" — would otherwise be
+ * invisible until the next reload.
+ */
+export const adoptRemoteDesign = async (
+  id: string,
+  known?: { name?: string; thumbUrl?: string },
+): Promise<SavedDesign | null> => {
+  const existing = readStore()?.designs.find((design) => design.id === id);
+  if (existing) return openDesignInLibrary(id);
+
+  try {
+    const detail = await axios.get<{ name?: string; pages?: unknown }>(
+      `/designs/${encodeURIComponent(id)}`,
+      { timeout: 15000 },
+    );
+    if (!isPages(detail.data?.pages)) return null;
+    const summary = listDesignSummaries().find((item) => item.id === id);
+    const design = makeDesign(
+      detail.data.pages,
+      known?.name || detail.data.name || summary?.name || 'Untitled',
+      id,
+    );
+    design.thumbUrl = known?.thumbUrl ?? summary?.thumbUrl;
+    design.remote = true;
+
+    const store = readStore();
+    if (!store) {
+      writeStore({ version: 1, activeId: id, designs: [design] });
+      return design;
+    }
+    store.designs.push(design);
+    store.activeId = id;
+    writeStore(store);
+    return design;
+  } catch {
+    return null;
+  }
+};
+
 export const renameDesignInLibrary = (
   id: string,
   name: string,

@@ -320,3 +320,140 @@ export const getTenant = (db, tenantId) =>
 
 export const listTenants = (db) =>
   db.prepare('SELECT id, name, created_at AS createdAt FROM tenants ORDER BY name').all();
+
+/* --- Templates -----------------------------------------------------------
+ * Metadata only; the payload (a preview image plus the serialized page) stays a
+ * JSON file, exactly like designs:
+ *   global templates -> {STORAGE_ROOT}/templates/{id}.json
+ *   tenant templates -> {STORAGE_ROOT}/users/{tenantId}/templates/{id}.json
+ *
+ * Sharing rule: a global template with no grants is shared with everyone. The
+ * moment it has a single grant it is shared with exactly those tenants — that
+ * is how one template gets narrowed to one client without a second mechanism.
+ * --------------------------------------------------------------------- */
+
+const TEMPLATE_COLUMNS = `id, scope, tenant_id AS tenantId, name, category,
+                           width, height, thumb_path AS thumbPath,
+                           created_at AS createdAt, created_by AS createdBy`;
+
+/** A template is visible to a tenant if it is theirs, or global and shared. */
+export const templateVisibilityClause = `
+  (t.scope = 'tenant' AND t.tenant_id = ?)
+  OR (t.scope = 'global' AND (
+        NOT EXISTS (SELECT 1 FROM template_grants g WHERE g.template_id = t.id)
+        OR EXISTS (
+          SELECT 1 FROM template_grants g
+           WHERE g.template_id = t.id AND g.tenant_id = ?
+        )
+      ))`;
+
+export const listTemplatesForTenant = (db, tenantId) =>
+  db
+    .prepare(
+      `SELECT t.id, t.scope, t.tenant_id AS tenantId, t.name, t.category,
+              t.width, t.height, t.thumb_path AS thumbPath,
+              t.created_at AS createdAt,
+              (SELECT count(*) FROM template_grants g WHERE g.template_id = t.id)
+                AS grantCount
+         FROM templates t
+        WHERE ${templateVisibilityClause}
+        ORDER BY CASE t.scope WHEN 'global' THEN 0 ELSE 1 END, t.name COLLATE NOCASE`,
+    )
+    .all(tenantId, tenantId);
+
+export const getTemplate = (db, id) =>
+  db.prepare(`SELECT ${TEMPLATE_COLUMNS} FROM templates WHERE id = ?`).get(id) ?? null;
+
+export const isTemplateVisible = (db, tenantId, id) =>
+  Boolean(
+    db
+      .prepare(
+        `SELECT 1 FROM templates t WHERE t.id = ? AND (${templateVisibilityClause})`,
+      )
+      .get(id, tenantId, tenantId),
+  );
+
+/** Every template, for the admin surface. */
+export const listAllTemplates = (db) =>
+  db
+    .prepare(
+      `SELECT ${TEMPLATE_COLUMNS} FROM templates
+        ORDER BY CASE scope WHEN 'global' THEN 0 ELSE 1 END, name COLLATE NOCASE`,
+    )
+    .all();
+
+export const upsertTemplate = (db, record) => {
+  db
+    .prepare(
+      `INSERT INTO templates
+         (id, scope, tenant_id, name, category, width, height, thumb_path, created_at, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         scope      = excluded.scope,
+         tenant_id  = excluded.tenant_id,
+         name       = excluded.name,
+         category   = excluded.category,
+         thumb_path = COALESCE(excluded.thumb_path, templates.thumb_path)`,
+    )
+    .run(
+      record.id,
+      record.scope,
+      record.scope === 'tenant' ? (record.tenantId ?? null) : null,
+      record.name,
+      record.category ?? null,
+      record.width ?? null,
+      record.height ?? null,
+      record.thumbPath ?? null,
+      record.createdAt ?? Date.now(),
+      record.createdBy ?? null,
+    );
+  return getTemplate(db, record.id);
+};
+
+/** Remove the row, returning it so the caller can delete the payload file. */
+export const deleteTemplate = (db, id) => {
+  const row = getTemplate(db, id);
+  if (!row) return null;
+  db.prepare('DELETE FROM templates WHERE id = ?').run(id);
+  return row;
+};
+
+export const knownTemplateIds = (db, scope, tenantId = null) =>
+  new Set(
+    db
+      .prepare(
+        `SELECT id FROM templates
+          WHERE scope = ? AND (tenant_id IS ? OR tenant_id = ?)`,
+      )
+      .all(scope, tenantId, tenantId)
+      .map((row) => row.id),
+  );
+
+/* --- Template grants ---------------------------------------------------- */
+
+export const grantTemplate = (db, templateId, tenantId) => {
+  db
+    .prepare(
+      `INSERT INTO template_grants (template_id, tenant_id, granted_at)
+       VALUES (?, ?, ?)
+       ON CONFLICT(template_id, tenant_id) DO NOTHING`,
+    )
+    .run(templateId, tenantId, Date.now());
+  return listTemplateGrants(db, templateId);
+};
+
+export const revokeTemplateGrant = (db, templateId, tenantId) =>
+  db
+    .prepare('DELETE FROM template_grants WHERE template_id = ? AND tenant_id = ?')
+    .run(templateId, tenantId).changes > 0;
+
+export const listTemplateGrants = (db, templateId) =>
+  db
+    .prepare(
+      `SELECT g.tenant_id AS tenantId, t.name AS tenantName, g.granted_at AS grantedAt
+         FROM template_grants g
+         LEFT JOIN tenants t ON t.id = g.tenant_id
+        WHERE g.template_id = ?
+        ORDER BY g.granted_at`,
+    )
+    .all(templateId);

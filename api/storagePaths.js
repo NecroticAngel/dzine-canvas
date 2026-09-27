@@ -46,6 +46,41 @@ const STORAGE_ROOT = resolvePath(
 const withUser = (templatePath, userId) =>
   templatePath.replaceAll('{userId}', userId || DEFAULT_USER);
 
+/**
+ * Per-tenant directory overrides. These MUST contain `{userId}`.
+ *
+ * Without it every tenant resolves to the same directory, so tenants would read
+ * and overwrite each other's files — and `adoptOrphanDesigns` would adopt one
+ * tenant's designs into another tenant's listing, which then serves their
+ * contents. The Helm chart shipped exactly this (`DESIGNS_DIR=/data/designs`),
+ * so it is now a startup error rather than a silent cross-tenant leak.
+ */
+const DESIGNS_TEMPLATE =
+  process.env.NECROZINE_DESIGNS_DIR || process.env.DESIGNS_DIR || null;
+const UPLOADS_TEMPLATE =
+  process.env.NECROZINE_UPLOADS_DIR || process.env.UPLOADS_DIR || null;
+
+const checkPerTenant = (label, value) =>
+  value && !value.includes('{userId}')
+    ? `${label} is "${value}" but must contain the {userId} placeholder — without it every ` +
+      'tenant shares one directory. Either add {userId} (e.g. /data/users/{userId}/designs) ' +
+      `or unset ${label} and point STORAGE_ROOT at the volume instead.`
+    : null;
+
+/** Set when the storage layout cannot keep tenants apart. Checked at boot. */
+export const storageConfigError =
+  checkPerTenant('DESIGNS_DIR', DESIGNS_TEMPLATE) ??
+  checkPerTenant('UPLOADS_DIR', UPLOADS_TEMPLATE);
+
+/**
+ * True when the storage root lives inside the application directory. Harmless
+ * locally; in a container it means uploads and designs are gone at the next
+ * deploy, which is the other half of the Helm bug above.
+ */
+export const storageRootIsEphemeral =
+  process.env.NODE_ENV === 'production' &&
+  !path.relative(PROJECT_ROOT, STORAGE_ROOT).startsWith('..');
+
 export const getStoragePaths = (userId = DEFAULT_USER) => {
   const uid = String(userId || DEFAULT_USER).replace(/[^\w.-]+/g, '_') || DEFAULT_USER;
 
@@ -59,8 +94,8 @@ export const getStoragePaths = (userId = DEFAULT_USER) => {
     path.join(__dirname, 'public'),
   );
 
-  const designsTemplate = process.env.NECROZINE_DESIGNS_DIR || process.env.DESIGNS_DIR;
-  const uploadsTemplate = process.env.NECROZINE_UPLOADS_DIR || process.env.UPLOADS_DIR;
+  const designsTemplate = DESIGNS_TEMPLATE;
+  const uploadsTemplate = UPLOADS_TEMPLATE;
 
   const designsDir = resolvePath(
     designsTemplate ? withUser(designsTemplate, uid) : null,
@@ -77,7 +112,19 @@ export const getStoragePaths = (userId = DEFAULT_USER) => {
   // would bloat every design record now that saving moves server-side.
   const thumbsDir = path.join(path.dirname(designsDir), 'thumbs');
 
-  for (const dir of [templatesDir, publicDir, designsDir, uploadsDir, thumbsDir]) {
+  // Templates a client publishes for themselves sit beside their designs, so a
+  // tenant never shares a directory with anyone else. Templates we publish live
+  // in the global `templatesDir`.
+  const tenantTemplatesDir = path.join(path.dirname(designsDir), 'templates');
+
+  for (const dir of [
+    templatesDir,
+    publicDir,
+    designsDir,
+    uploadsDir,
+    thumbsDir,
+    tenantTemplatesDir,
+  ]) {
     mkdirSync(dir, { recursive: true });
   }
   mkdirSync(path.join(publicDir, 'thumbs'), { recursive: true });
@@ -86,6 +133,7 @@ export const getStoragePaths = (userId = DEFAULT_USER) => {
     storageRoot: STORAGE_ROOT,
     userId: uid,
     templatesDir,
+    tenantTemplatesDir,
     publicDir,
     designsDir,
     uploadsDir,
