@@ -72,6 +72,8 @@ type EditorState = {
   sidebar?: string;
   selectedLayerIds: string[];
   dragNDrop: unknown;
+  /** True while there are edits autosave has not persisted yet. */
+  dirty: boolean;
 };
 
 /** Identifies one cell of a TableLayer by its 1-based row/col index. */
@@ -516,6 +518,9 @@ const remapLayerTree = (
 
 /** Screen-pixel distance within which a drag latches onto a guide. */
 const SNAP_THRESHOLD = 6;
+
+/** Quiet period after the last edit before autosave persists the design. */
+const AUTOSAVE_DELAY = 1200;
 
 const isDescendantOf = (
   layers: SerializedLayers,
@@ -1845,6 +1850,7 @@ export const Editor = ({
   const [editingLayerId, setEditingLayerId] = useState<string | null>(null);
   const [selectedCell, setSelectedCell] = useState<TableCellRef | null>(null);
   const [guides, setGuides] = useState<SnapGuide[]>([]);
+  const [dirty, setDirty] = useState(false);
   const [currentDesign, setCurrentDesign] = useState<DesignSummary | null>(
     boot.currentDesign,
   );
@@ -1940,12 +1946,19 @@ export const Editor = ({
     return saved;
   }, [flushTextDraft, refreshDesignList]);
 
-  const commit = useCallback((next: SerializedPage[]) => {
-    past.current.push(clonePages(pagesRef.current));
-    future.current = [];
-    pagesRef.current = next;
-    setPages(next);
-  }, []);
+  /** Any change to the pages means there is something autosave has to persist. */
+  const markDirty = useCallback(() => setDirty(true), []);
+
+  const commit = useCallback(
+    (next: SerializedPage[]) => {
+      past.current.push(clonePages(pagesRef.current));
+      future.current = [];
+      pagesRef.current = next;
+      setPages(next);
+      markDirty();
+    },
+    [markDirty],
+  );
 
   const patchLayerLive = useCallback(
     (layerId: string, box: { position: Point; boxSize: PageSize }) => {
@@ -1963,14 +1976,37 @@ export const Editor = ({
       };
       pagesRef.current = next;
       setPages(next);
+      markDirty();
     },
-    [],
+    [markDirty],
   );
 
-  const patchLayerText = useCallback((layerId: string, text: string) => {
-    // Draft only while editing — pages update on flush/commit.
-    textDraftRef.current = { id: layerId, text };
-  }, []);
+  const patchLayerText = useCallback(
+    (layerId: string, text: string) => {
+      // Draft only while editing — pages update on flush/commit. Typing still
+      // counts as an unsaved change so autosave picks it up once editing ends.
+      textDraftRef.current = { id: layerId, text };
+      markDirty();
+    },
+    [markDirty],
+  );
+
+  /**
+   * Autosave.
+   *
+   * A short quiet period after the last edit persists the design, and the design
+   * library then uploads it. Deliberately paused while a text layer is being
+   * edited, because persisting flushes the draft out of the textarea and that
+   * must never happen under the caret. The flush on blur/Escape restarts it.
+   */
+  useEffect(() => {
+    if (!dirty || editingLayerId) return;
+    const timer = window.setTimeout(() => {
+      persistCurrent();
+      setDirty(false);
+    }, AUTOSAVE_DELAY);
+    return () => window.clearTimeout(timer);
+  }, [dirty, editingLayerId, pages, persistCurrent]);
 
   /** Commit a shallow patch onto a layer's props — undoable and saved. */
   const patchLayerProps = useCallback(
@@ -2513,6 +2549,7 @@ export const Editor = ({
       currentDesign,
       designs,
       guides,
+      dirty,
       actions,
       query,
     }),
@@ -2521,6 +2558,7 @@ export const Editor = ({
       activePage,
       currentDesign,
       designs,
+      dirty,
       editingLayerId,
       guides,
       selectedCell,
@@ -2556,6 +2594,7 @@ export function useEditor<
         sidebar: ctx.sidebar,
         selectedLayerIds: ctx.selectedLayerIds,
         dragNDrop: ctx.dragNDrop,
+        dirty: ctx.dirty,
       })
     : ({} as T);
   return {
@@ -2568,6 +2607,7 @@ export function useEditor<
     sidebar: ctx.sidebar,
     currentDesign: ctx.currentDesign,
     designs: ctx.designs,
+    dirty: ctx.dirty,
   };
 }
 

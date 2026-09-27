@@ -84,7 +84,7 @@ const EditorHeaderForwardRef: ForwardRefRenderFunction<
   const openFileRef = useRef<HTMLInputElement>(null);
   const exportMenuRef = useRef<HTMLDivElement>(null);
   const filesMenuRef = useRef<HTMLDivElement>(null);
-  const { actions, query, currentDesign, designs } = useEditor();
+  const { actions, query, currentDesign, designs, dirty } = useEditor();
   const { mode, toggleMode } = useAppTheme();
   const [saveState, setSaveState] = useState<'idle' | 'saved'>('idle');
   const [exportOpen, setExportOpen] = useState(false);
@@ -99,13 +99,16 @@ const EditorHeaderForwardRef: ForwardRefRenderFunction<
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(getSyncStatus());
   useEffect(() => subscribeToSync(setSyncStatus), []);
   const syncing = syncStatus === 'saving' || syncStatus === 'pending';
-  const saveLabel = syncing
-    ? 'Saving…'
-    : syncStatus === 'error'
+  // `dirty` covers the gap between an edit and autosave persisting it, so the
+  // button reads "Saving…" for the whole cycle instead of claiming to be done.
+  const saveLabel =
+    syncStatus === 'error'
       ? 'Retrying…'
-      : saveState === 'saved'
-        ? 'Saved'
-        : 'Save';
+      : syncing || dirty
+        ? 'Saving…'
+        : saveState === 'saved'
+          ? 'Saved'
+          : 'Save';
   const saveBackground =
     syncStatus === 'error'
       ? '#b45309'
