@@ -25,6 +25,7 @@ import {
   deleteDesign,
   deleteInvite,
   deleteTemplate,
+  designOwner,
   ensureTenant,
   getDesign,
   getTemplate,
@@ -32,7 +33,6 @@ import {
   grantTemplate,
   isTemplateVisible,
   knownDesignIds,
-  knownTemplateIds,
   listAllTemplates,
   listDesigns,
   listInvites,
@@ -310,14 +310,35 @@ const writeTemplatePayload = (dir, record) => {
 const adoptOrphanTemplates = (db, dir, scope, tenantId = null) => {
   const files = readdirSync(dir).filter((name) => name.endsWith('.json'));
   if (files.length === 0) return 0;
-  const known = knownTemplateIds(db, scope, tenantId);
-  let adopted = 0;
+  let changed = 0;
   for (const file of files) {
     const id = file.replace(/\.json$/i, '');
-    if (known.has(id)) continue;
+    const row = getTemplate(db, id);
+    if (row) {
+      // Already indexed. The only thing worth doing again is repairing a row
+      // that predates previews being copied in; `thumbPath` decides that, so
+      // the payload is only opened when it is genuinely missing.
+      if (row.thumbPath) continue;
+      const payload = readTemplatePayload(dir, id);
+      const thumbPath = payload
+        ? adoptTemplatePreview(bootPaths.publicDir, dir, id, payload.img)
+        : null;
+      if (thumbPath) {
+        upsertTemplate(db, {
+          id,
+          scope: row.scope,
+          tenantId: row.tenantId,
+          name: row.name,
+          thumbPath,
+        });
+        changed += 1;
+      }
+      continue;
+    }
+
     const payload = readTemplatePayload(dir, id);
     if (!payload) continue;
-    const row = upsertTemplate(db, {
+    upsertTemplate(db, {
       id,
       scope,
       tenantId,
@@ -328,12 +349,12 @@ const adoptOrphanTemplates = (db, dir, scope, tenantId = null) => {
     // so the preview survives even if that asset moves, and so listing
     // templates never has to open the payload files at all.
     const thumbPath = adoptTemplatePreview(bootPaths.publicDir, dir, id, payload.img);
-    if (thumbPath && row) {
+    if (thumbPath) {
       upsertTemplate(db, { id, scope, tenantId, name: payload.name, thumbPath });
     }
-    adopted += 1;
+    changed += 1;
   }
-  return adopted;
+  return changed;
 };
 
 /** Copy a template's static preview image in, returning the recorded file. */
@@ -702,6 +723,19 @@ api.post('/templates', (req, res) => {
       ? req.body.name.trim()
       : `Template ${id.slice(0, 8)}`;
   const dir = templateDirFor(scope, ownerTenant);
+
+  // Template ids are unique across every scope and tenant, so reusing one that
+  // belongs to someone else would rewrite their row — a client picking
+  // "blank-white" would take the shared template away from everyone.
+  const existingRow = getTemplate(db, id);
+  const sameOwner =
+    existingRow !== null &&
+    existingRow.scope === scope &&
+    (scope === 'global' || existingRow.tenantId === ownerTenant);
+  if (existingRow && !sameOwner) {
+    res.status(409).json({ error: 'That template id is already taken' });
+    return;
+  }
   if (existsSync(path.join(dir, `${id}.json`)) && !req.body?.overwrite) {
     res.status(409).json({ error: 'Template id already exists' });
     return;
@@ -928,6 +962,13 @@ api.put('/designs/:id', (req, res) => {
     return;
   }
   ensureTenant(db, userId);
+  // Design ids are global, so an id that belongs to another tenant must never
+  // be reusable here — that would move their row to us.
+  const owner = designOwner(db, id);
+  if (owner && owner !== userId) {
+    res.status(409).json({ error: 'Design id belongs to another workspace' });
+    return;
+  }
   const existing = getDesign(db, userId, id);
   const now = Date.now();
   const name =
@@ -970,6 +1011,11 @@ api.post('/designs', (req, res) => {
   }
   const id = safeId(req.body.id);
   ensureTenant(db, userId);
+  const owner = designOwner(db, id);
+  if (owner && owner !== userId) {
+    res.status(409).json({ error: 'Design id belongs to another workspace' });
+    return;
+  }
   const filePath = path.join(designsDir, `${id}.json`);
   if (existsSync(filePath) && !req.body.overwrite) {
     res.status(409).json({ error: 'Design id already exists' });

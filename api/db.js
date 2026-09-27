@@ -159,8 +159,8 @@ export const upsertDesign = (db, record) => {
          updated_at = excluded.updated_at,
          bytes      = excluded.bytes,
          thumb_path = COALESCE(excluded.thumb_path, designs.thumb_path),
-         tenant_id  = excluded.tenant_id,
-         deleted_at = NULL`,
+         deleted_at = NULL
+       WHERE designs.tenant_id = excluded.tenant_id`,
     )
     .run(
       record.id,
@@ -192,6 +192,12 @@ export const knownDesignIds = (db, tenantId) =>
       .all(tenantId)
       .map((row) => row.id),
   );
+
+/** Which tenant owns a design id, or null. Ids are global, so this is how a
+ * write can tell that an id already belongs to someone else. */
+export const designOwner = (db, id) =>
+  db.prepare('SELECT tenant_id AS tenantId FROM designs WHERE id = ?').get(id)
+    ?.tenantId ?? null;
 
 /** How many live designs the tenant has, without touching the filesystem. */
 export const liveDesignCount = (db, tenantId) =>
@@ -418,18 +424,10 @@ export const deleteTemplate = (db, id) => {
   return row;
 };
 
-export const knownTemplateIds = (db, scope, tenantId = null) =>
-  new Set(
-    db
-      .prepare(
-        `SELECT id FROM templates
-          WHERE scope = ? AND (tenant_id IS ? OR tenant_id = ?)`,
-      )
-      .all(scope, tenantId, tenantId)
-      .map((row) => row.id),
-  );
-
-/* --- Template grants ---------------------------------------------------- */
+/* --- Template grants ----------------------------------------------------
+ * Grants narrow a global template. With none, it is shared with every tenant;
+ * as soon as one exists it is shared with exactly the listed tenants.
+ * --------------------------------------------------------------------- */
 
 export const grantTemplate = (db, templateId, tenantId) => {
   db

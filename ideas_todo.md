@@ -165,16 +165,47 @@ with them, and creates its own designs. Decisions already taken: orgs with multi
   read 401; designs land in the right tenant; invite flow provisions correctly) and in the browser
   (dev mode still sees its 3 designs, and adding a shape autosaved — server went 2 → 3 layers).
 
+**Done — Phase 3, template sharing**
+- Templates are in the database now (`scope` + `tenant_id` + preview file), not a directory scan.
+  Payloads stay files: shared ones in `{STORAGE_ROOT}/templates/`, a client's own in
+  `{STORAGE_ROOT}/users/{tenant}/templates/`.
+- **The sharing rule is one line of SQL:** a global template with *no* grants is shared with every
+  tenant; the moment it has one grant it is shared with exactly those tenants. That is how a
+  template gets narrowed to a single client without a second mechanism.
+- `POST /templates/:id/use` **copies** the template into the caller's workspace as a new design and
+  returns it, so a client can never edit what we shared. This is the core of the product promise.
+- A client can save its own design as a template (`sourceDesignId`), private to its tenant. Only an
+  administrator can publish something shared — `scope: 'global'` from a client is 403.
+- Admin surface: `GET /admin/templates` (with each one's grants), `POST /admin/template-grants`,
+  `DELETE /admin/template-grants/:templateId/:tenantId`.
+- `GET /templates` is **metadata only** — the payload is a whole design page, so shipping every one
+  of them on page load is the mistake the designs list used to make. `GET /templates/:id` has the
+  content, and the editor now fetches it on click.
+- Previews are self-contained files served from `GET /templates/:id/thumb` (authenticated and
+  visibility-checked). Adoption copies a packaged template's static preview in, and a second pass
+  repairs rows indexed before previews existed.
+- Welcome page: a **"Start from a template"** gallery; picking one creates the design and opens it.
+  The editor's Templates panel keeps its old behaviour (replace the current page) and now labels
+  each template **Shared** or **Yours**.
+- Two id-takeover holes closed while testing: template ids are globally unique, so a client posting
+  an existing id ("blank-white") used to **rewrite the shared row**; and `upsertDesign` moved
+  `tenant_id` on conflict, so posting another tenant's design id reassigned it. Both now 409.
+- Verified with three real tokens (staff admin, two client tenants): visibility before and after a
+  grant, revoke, both hijack paths, cross-tenant fetch/use/delete of a private template, protected
+  thumbnails, and the on-disk layout. **ALL PASSED.**
+
 **Next**
-1. **Phase 3 — sharing**: tenant-private templates, `template_grants`, an admin surface to publish
-   and share, and "use template → copy into tenant" end to end. `requireAdmin` and `GET /me`
-   already give the UI the role it needs.
+1. **Phase 4 — hardening.** The Helm bug is fixed (see below); what is left is backups, rate limits,
+   an upload MIME allow-list, and an audit trail.
 2. Conflict handling: last-write-wins means two people on one design clobber each other.
 3. Tier 2 rulers/grid, Tier 5 export upgrades, or Tier 4 filling the permanently-empty panels.
 
 **Also known (not scheduled)**
-- Helm: `UPLOADS_DIR` is unset while `DESIGNS_DIR`/`TEMPLATES_DIR` point at `/data`, so **uploads are
-  lost on every redeploy**.
+- **The upload queue is in memory only, so a page reload inside the 800 ms debounce silently loses
+  the operation.** Watching it happen: delete a design through the UI and reload immediately — the
+  delete never leaves, the server still has it, and the next hydrate puts it back. The same window
+  applies to a save. Persisting the pending queue (or flushing on `pagehide`) is the fix; it also
+  explains why designs seemed to "resurrect" during this session.
 - Repo history is ~192 MB packed, of which ~175 MB is one 58 MB `output-from-templates.pdf` committed
   three separate times. It is untracked and ignored now, so it will not grow; only a history rewrite
   (force-push, invalidates existing clones) removes it.
@@ -236,6 +267,15 @@ before you trust an `Invoke-RestMethod` assertion.
     Assert with `@(((Invoke-WebRequest $url).Content | ConvertFrom-Json))`, which gives a real
     `Object[]`. (Cost me three confused tool calls; `Invoke-RestMethod` is fine for single objects
     such as `/me`.)
+17. **Design and template ids are global, not per tenant.** Both tables key on the id alone, so two
+    tenants can never hold the same id — and the `ON CONFLICT DO UPDATE` clauses used to *reassign*
+    the row, which let a caller take over someone else's design or rewrite a shared template.
+    Designs now carry `WHERE designs.tenant_id = excluded.tenant_id` and both write paths return
+    409 when the id belongs to another workspace. Check ownership before any new id-shaped write.
+18. **Deleting something and reloading within the 800 ms sync debounce loses the delete.** The
+    pending-op queue is in memory, so the reload drops it; the server still has the design, and the
+    next hydrate brings it back. It looks like "delete is broken" and it is really "you were faster
+    than the debounce". Wait for the Save label to settle before reloading.
 
 Test data in the library: `Portraitdfsfe` (used for testing),
 `Square` (created while reproducing the table bug — safe to delete).
@@ -360,19 +400,18 @@ Working in c:\Users\jo\dev\NecroZine\canva-clone ONLY (ignore NecroZine_Next/Ope
 Please read ideas_todo.md in that folder — it's a handover from your previous session.
 
 State: editor features are done through Tier 2 (snapping, smart guides, align/distribute, undoable
-drags, layer clipboard, undo/redo). The multi-tenant work is well underway — read
+drags, layer clipboard, undo/redo). The multi-tenant work is nearly done — read
 `docs/plans/multi-tenant.md` **and** §3.5 first; §3.5 lists exactly what is done and what is next.
-Phases 1 and 2 are complete: designs live in the server's SQLite + files, and every request is
-authenticated against a verified OIDC token (invite-only, per-tenant isolation, admin-gated
-templates). Dev mode still works with no configuration.
+Phases 1, 2 and 3 are complete: designs and templates live in server-side SQLite + files, every
+request is authenticated against a verified OIDC token (invite-only, per-tenant isolation,
+admin-gated publishing), and a client can start a design from a template it was shared with.
+Dev mode still works with no configuration.
 
 Next, in order:
-1. **Phase 3 — sharing.** Tenant-private templates, `template_grants`, an admin surface to publish
-   and share, "use template → copy into tenant" end to end.
-2. **Phase 4 — hardening.** Start with the Helm bug: `UPLOADS_DIR` is unset while
-   `DESIGNS_DIR`/`TEMPLATES_DIR` point at `/data`, so **uploads are lost on every redeploy**. Then
-   backups, rate limits, upload MIME allow-list, audit trail.
-3. Conflict handling (last-write-wins clobbers), Tier 2 rulers/grid, Tier 5 export upgrades, or
+1. **Phase 4 — hardening.** Backups of `db.sqlite` + files, rate limits, upload MIME allow-list,
+   audit trail. Also: the pending-op queue is in memory, so a reload inside the 800 ms debounce
+   silently drops a delete (see §3.5 and gotcha 18).
+2. Conflict handling (last-write-wins clobbers), Tier 2 rulers/grid, Tier 5 export upgrades, or
    Tier 4 filling the permanently-empty panels.
 
 Verify in the real browser, not just tsc. Read §3, §3.5 and the §4 gotchas before writing Playwright

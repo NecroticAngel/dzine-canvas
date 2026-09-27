@@ -151,11 +151,15 @@ export const listDesignSummaries = (): DesignSummary[] => {
   const store = readStore();
   if (!store) return [];
   return store.designs
-    .map(({ id, name, updatedAt, thumbnail }) => ({
+    // `thumbUrl` has to survive this mapping: the grid falls back to it for
+    // designs this browser never captured a preview for, which is every design
+    // created somewhere else — or from a template.
+    .map(({ id, name, updatedAt, thumbnail, thumbUrl }) => ({
       id,
       name,
       updatedAt,
       thumbnail,
+      thumbUrl,
     }))
     .sort((a, b) => b.updatedAt - a.updatedAt);
 };
@@ -515,7 +519,9 @@ export const hydrateLibrary = (): Promise<void> => {
           ...local,
           name: summary.name || local.name,
           updatedAt: remoteUpdatedAt || local.updatedAt,
-          thumbUrl: summary.thumbUrl ?? local.thumbUrl,
+          // The server is authoritative for its own previews: keeping a local
+          // URL it no longer serves leaves the grid requesting a missing image.
+          thumbUrl: summary.thumbUrl ?? undefined,
           remote: true,
         });
         continue;

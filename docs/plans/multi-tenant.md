@@ -220,7 +220,37 @@ owns, so a client can never mutate what we shared.
   - **Verified in the browser, dev mode:** the existing `default` tenant still sees its 3 designs, the
     session line reads `default · dev@localhost · admin`, and adding a shape autosaved through
     `tenantOf(req)` — the server's copy went from 2 to 3 non-ROOT layers. The write path is intact.
-- Next: **Phase 3 — sharing**.
+- **Phase 3 — sharing — DONE.** Templates moved into the database, with sharing expressed once.
+  - `templates.scope` is `global` (ours) or `tenant` (a client's own), and `template_grants` narrows
+    a global one. **A global template with no grants is shared with every tenant; the moment it has
+    one grant it is shared with exactly those tenants.** One clause, no second mechanism.
+  - Payloads stay files: shared templates in `{STORAGE_ROOT}/templates/`, a client's own in
+    `{STORAGE_ROOT}/users/{tenant}/templates/`. Previews are copied in beside them and served from
+    an authenticated, visibility-checked `GET /templates/:id/thumb`.
+  - `GET /templates` is metadata only, because a payload is a whole design page.
+    `GET /templates/:id` carries the content and the editor fetches it on click.
+  - **`POST /templates/:id/use` copies** the template into the caller's workspace and returns the new
+    design. That is the only way content leaves a template, so a shared template can never be
+    edited by the people it is shared with.
+  - A member may create templates, but only ever in their own tenant; `scope: 'global'` from a
+    member is 403. Admins get `GET /admin/templates`, `POST /admin/template-grants` and
+    `DELETE /admin/template-grants/:templateId/:tenantId`.
+  - UI: a "Start from a template" gallery on the welcome page, and the editor's Templates panel
+    labels each one **Shared** or **Yours**.
+  - **Verified with three real tokens** (a staff admin plus two client tenants): visibility before
+    and after a grant, revoke, cross-tenant fetch/use/delete of a private template, protected
+    thumbnails, the on-disk layout, and both id-takeover paths below. All passed.
+- **Two id-takeover holes found and fixed while testing Phase 3.** Ids are globally unique, so
+  `ON CONFLICT DO UPDATE` could *reassign* a row: a client posting `{id:'blank-white'}` rewrote the
+  shared template into a private one, and posting another tenant's design id moved that design into
+  the caller's tenant. Both write paths now check ownership and return 409, and `upsertDesign`
+  refuses to change `tenant_id` at all.
+- **Storage layout is now enforced, not assumed.** `DESIGNS_DIR`/`UPLOADS_DIR` must contain
+  `{userId}`; without it every tenant shares one directory, which is what the Helm chart shipped
+  (`DESIGNS_DIR=/data/designs`) while leaving `UPLOADS_DIR` unset so uploads died on redeploy. The
+  chart now sets `STORAGE_ROOT=/data` only, and the server refuses to boot on a per-tenant override
+  that cannot vary by tenant.
+- Next: **Phase 4 — hardening** (backups, rate limits, upload MIME allow-list, audit trail).
 
 ### Phase 1 — real identity (security floor) — ✅ DONE, all 8 items (see Progress above)
 1. Decide the IdP + claim mapping (`sub` → `members.external_id`; first login provisions or is
@@ -247,14 +277,21 @@ owns, so a client can never mutate what we shared.
 5. Migrate any existing `localStorage` library into the account on first login (one-shot, idempotent).
 6. Debounced autosave + dirty indicator (Tier 3 from `ideas_todo.md`).
 
-### Phase 3 — sharing
+### Phase 3 — sharing — ✅ DONE, all items (see Progress above)
 Tenant admin vs member roles, `template_grants`, an admin surface to publish and share, and
 "use template → copy" end to end.
 
 ### Phase 4 — hardening
-PVC for uploads, backups of `db.sqlite` + files, rate limits (the 30 MB JSON body and 15 MB uploads
-are unauthenticated today), upload allow-list by MIME rather than the client-supplied extension,
-and an audit trail of who changed what.
+Backups of `db.sqlite` + files, rate limits (the 30 MB JSON body and 15 MB uploads are
+unauthenticated today), upload allow-list by MIME rather than the client-supplied extension, and an
+audit trail of who changed what.
+
+Already fixed: the Helm chart no longer loses uploads on redeploy, and a per-tenant directory
+override that cannot vary by tenant is now a startup error.
+
+Still open from Phase 3 testing: **the pending-op queue is in memory only, so a reload inside the
+800 ms debounce silently loses the operation** — a delete is forgotten and the next hydrate brings
+the design back. Persist the queue, or flush it on `pagehide`.
 
 ## 8. Open questions
 
