@@ -5,7 +5,12 @@ import type {
   SerializedLayers,
   SerializedPage,
 } from '@lidojs/design-core';
-import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
+import type {
+  CSSProperties,
+  Dispatch,
+  PointerEvent as ReactPointerEvent,
+  SetStateAction,
+} from 'react';
 import {
   createContext,
   useCallback,
@@ -205,6 +210,87 @@ const EditorScaleContext = createContext<{
   setScale: (scale: number) => void;
   setActivePage: (index: number) => void;
 } | null>(null);
+
+/** Measurement aids. Kept apart from the scale context so the footer can offer
+ * them without the canvas having to own a second provider chain. */
+type CanvasViewValue = {
+  showRulers: boolean;
+  setShowRulers: Dispatch<SetStateAction<boolean>>;
+  showGrid: boolean;
+  setShowGrid: Dispatch<SetStateAction<boolean>>;
+  gridSize: number;
+  setGridSize: Dispatch<SetStateAction<number>>;
+};
+
+const CanvasViewContext = createContext<CanvasViewValue | null>(null);
+
+const CANVAS_VIEW_KEY = 'necrozine-canvas-view';
+
+/** Grid presets, in page units. */
+const GRID_SIZES = [8, 10, 16, 20, 25, 32, 40, 50, 64, 100];
+
+const readCanvasView = (): Partial<CanvasViewValue> => {
+  try {
+    const raw = localStorage.getItem(CANVAS_VIEW_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    return {
+      showRulers: parsed.showRulers === true,
+      showGrid: parsed.showGrid === true,
+      gridSize: GRID_SIZES.includes(Number(parsed.gridSize))
+        ? Number(parsed.gridSize)
+        : 20,
+    };
+  } catch {
+    return {};
+  }
+};
+
+type SelectionBox = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+/**
+ * Ruler tick spacing, coarsening as the canvas shrinks.
+ *
+ * Ticks are labelled in page units, so the step is chosen in page units and the
+ * list is the set of spacings people actually measure in. 60px on screen is the
+ * point where two labels stop colliding.
+ */
+const RULER_STEPS = [1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000];
+
+const rulerStepFor = (scale: number) =>
+  RULER_STEPS.find((step) => step * scale >= 60) ?? RULER_STEPS[RULER_STEPS.length - 1];
+
+const RULER_THICKNESS = 20;
+
+/**
+ * Theme colours, re-read at most once a second.
+ *
+ * `getComputedStyle` per frame per ruler is a style recalc for two strings, so
+ * it is cached — the values only change when the theme does.
+ */
+let rulerPalette = { at: 0, values: { bg: '#fff', line: '#999', text: '#666', clear: 'rgba(0,0,0,0)' } };
+
+const rulerColors = () => {
+  if (Date.now() - rulerPalette.at < 1000) return rulerPalette.values;
+  const style = getComputedStyle(document.documentElement);
+  const read = (name: string, fallback: string) =>
+    style.getPropertyValue(name).trim() || fallback;
+  rulerPalette = {
+    at: Date.now(),
+    values: {
+      bg: read('--app-ruler-bg', '#ffffff'),
+      line: read('--app-ruler-line', 'rgba(0,0,0,.3)'),
+      text: read('--app-ruler-text', '#666666'),
+      clear: read('--app-ruler-selection', 'rgba(61,142,255,.2)'),
+    },
+  };
+  return rulerPalette.values;
+};
 
 const clonePages = (pages: SerializedPage[]) =>
   JSON.parse(JSON.stringify(pages)) as SerializedPage[];
@@ -1854,6 +1940,22 @@ export const Editor = ({
   const [selectedCell, setSelectedCell] = useState<TableCellRef | null>(null);
   const [guides, setGuides] = useState<SnapGuide[]>([]);
   const [dirty, setDirty] = useState(false);
+  // Measurement aids, restored from the last session.
+  const bootView = useRef(readCanvasView()).current;
+  const [showRulers, setShowRulers] = useState(bootView.showRulers ?? false);
+  const [showGrid, setShowGrid] = useState(bootView.showGrid ?? false);
+  const [gridSize, setGridSize] = useState(bootView.gridSize ?? 20);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        CANVAS_VIEW_KEY,
+        JSON.stringify({ showRulers, showGrid, gridSize }),
+      );
+    } catch {
+      // A browser that refuses storage just loses the preference.
+    }
+  }, [showRulers, showGrid, gridSize]);
   const [currentDesign, setCurrentDesign] = useState<DesignSummary | null>(
     boot.currentDesign,
   );
@@ -2577,10 +2679,21 @@ export const Editor = ({
     ],
   );
 
+  const canvasView: CanvasViewValue = {
+    showRulers,
+    setShowRulers,
+    showGrid,
+    setShowGrid,
+    gridSize,
+    setGridSize,
+  };
+
   return (
     <EditorContext.Provider value={value}>
       <EditorScaleContext.Provider value={{ scale, setScale, setActivePage }}>
-        {children}
+        <CanvasViewContext.Provider value={canvasView}>
+          {children}
+        </CanvasViewContext.Provider>
       </EditorScaleContext.Provider>
     </EditorContext.Provider>
   );
@@ -2625,8 +2738,16 @@ export const useSelectedLayers = () => {
 
 export const DesignFrame = ({ data }: { data?: SerializedPage[] }) => {
   const { pages, activePage, scale, actions } = useEditor();
+  // Not from `useEditor()`: with no selector it returns a curated subset, and
+  // `selectedLayerIds` is not in it. The type is an index signature, so asking
+  // for a field that is not there compiles fine and is `undefined` at runtime.
+  const { selectedLayerIds } = useSelectedLayers();
   const ctx = useContext(EditorContext);
   const scaleCtx = useContext(EditorScaleContext);
+  const canvasView = useContext(CanvasViewContext);
+  const showRulers = canvasView?.showRulers ?? false;
+  const showGrid = canvasView?.showGrid ?? false;
+  const gridSize = canvasView?.gridSize ?? 20;
   const bootstrapped = useRef(false);
   // Layer clipboard. Stored as serialized trees; re-keyed on every paste so the
   // same entry can be pasted repeatedly without id collisions.
@@ -2684,6 +2805,25 @@ export const DesignFrame = ({ data }: { data?: SerializedPage[] }) => {
 
       const selected = ctx?.selectedLayerIds ?? [];
       const page = pages[activePage];
+
+      // Measurement aids. Plain Shift+R / Shift+G, matching the usual design
+      // tool bindings, and only while a text layer is not being edited.
+      //
+      // These sit outside the `mod` branch below on purpose: that branch is for
+      // Ctrl/Cmd combinations, and Shift alone never sets `mod`.
+      //
+      // The updater form matters too: this handler lives in an effect whose
+      // dependencies do not change when the view toggles, so reading `showGrid`
+      // from the closure would read whatever it was when the effect last ran and
+      // the toggle would appear to do nothing.
+      if (key === 'R' || key === 'r' || key === 'G' || key === 'g') {
+        if (event.shiftKey && !mod) {
+          event.preventDefault();
+          if (key.toLowerCase() === 'r') canvasView?.setShowRulers((value) => !value);
+          else canvasView?.setShowGrid((value) => !value);
+          return;
+        }
+      }
 
       if (mod) {
         const lower = key.toLowerCase();
@@ -2834,43 +2974,112 @@ export const DesignFrame = ({ data }: { data?: SerializedPage[] }) => {
   const size = pageSizeOf(page);
   const guides = ctx?.guides ?? [];
 
+  // The union of the selected layers' boxes, in page units, so the rulers can
+  // shade the extent of what is selected the way a design tool does.
+  const selectionBox = ((): SelectionBox | null => {
+    const boxes = layerBoxes(pages, activePage, selectedLayerIds);
+    if (!boxes.length) return null;
+    const left = Math.min(...boxes.map((item) => item.x));
+    const top = Math.min(...boxes.map((item) => item.y));
+    const right = Math.max(...boxes.map((item) => item.x + item.width));
+    const bottom = Math.max(...boxes.map((item) => item.y + item.height));
+    return { x: left, y: top, width: right - left, height: bottom - top };
+  })();
+
   return (
     <div
       css={{
         flex: 1,
-        overflow: 'auto',
         display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
+        flexDirection: 'column',
         minHeight: 0,
-        padding: 24,
-      }}
-      onPointerDown={() => {
-        actions.selectLayers([]);
-        actions.setEditingLayer(null);
+        minWidth: 0,
       }}
     >
-      <div
-        id={`lidojs-page-${activePage}`}
-        css={{
-          width: size.width * scale,
-          height: size.height * scale,
-          boxShadow: 'var(--app-canvas-shadow)',
-          background: '#fff',
-        }}
-        onPointerDown={(e) => e.stopPropagation()}
-      >
+      {showRulers && (
+        <div css={{ display: 'flex', flexShrink: 0 }}>
+          {/* A corner to keep the two strips from meeting at a seam. */}
+          <div
+            css={{
+              width: RULER_THICKNESS,
+              height: RULER_THICKNESS,
+              flexShrink: 0,
+              background: 'var(--app-ruler-bg)',
+              borderRight: '1px solid var(--app-border)',
+              borderBottom: '1px solid var(--app-border)',
+            }}
+          />
+          <RulerStrip
+            axis="x"
+            scale={scale}
+            pageSize={size}
+            selection={selectionBox}
+            pageId={`lidojs-page-${activePage}`}
+          />
+        </div>
+      )}
+      <div css={{ display: 'flex', flex: 1, minHeight: 0, minWidth: 0 }}>
+        {showRulers && (
+          <RulerStrip
+            axis="y"
+            scale={scale}
+            pageSize={size}
+            selection={selectionBox}
+            pageId={`lidojs-page-${activePage}`}
+          />
+        )}
         <div
           css={{
-            width: size.width,
-            height: size.height,
-            position: 'relative',
-            transform: `scale(${scale})`,
-            transformOrigin: 'top left',
+            flex: 1,
+            overflow: 'auto',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            minHeight: 0,
+            minWidth: 0,
+            padding: 24,
+          }}
+          onPointerDown={() => {
+            actions.selectLayers([]);
+            actions.setEditingLayer(null);
           }}
         >
-          <PageCanvas page={page} />
-          {guides.map((guide) => (
+          <div
+            id={`lidojs-page-${activePage}`}
+            css={{
+              width: size.width * scale,
+              height: size.height * scale,
+              boxShadow: 'var(--app-canvas-shadow)',
+              background: '#fff',
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <div
+              css={{
+                width: size.width,
+                height: size.height,
+                position: 'relative',
+                transform: `scale(${scale})`,
+                transformOrigin: 'top left',
+              }}
+            >
+              <PageCanvas page={page} />
+              {showGrid && (
+                <div
+                  data-canvas-grid={gridSize}
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    pointerEvents: 'none',
+                    // One line per cell, drawn in page units so the grid stays
+                    // locked to the design rather than to the screen. The line
+                    // is 1/scale wide, which keeps it one pixel at any zoom.
+                    zIndex: 5,
+                    backgroundImage: `repeating-linear-gradient(to right, var(--app-grid-line) 0, var(--app-grid-line) ${1 / scale}px, transparent ${1 / scale}px, transparent ${gridSize}px), repeating-linear-gradient(to bottom, var(--app-grid-line) 0, var(--app-grid-line) ${1 / scale}px, transparent ${1 / scale}px, transparent ${gridSize}px)`,
+                  }}
+                />
+              )}
+              {guides.map((guide) => (
             <div
               key={`${guide.axis}-${guide.position}`}
               data-snap-guide={guide.axis}
@@ -2899,6 +3108,8 @@ export const DesignFrame = ({ data }: { data?: SerializedPage[] }) => {
               }
             />
           ))}
+            </div>
+          </div>
         </div>
       </div>
       <CellToolbar />
@@ -2986,6 +3197,144 @@ const DISTRIBUTE_COMMANDS: { axis: DistributeAxis; label: string }[] = [
  * Sits 48px above the anchor rather than 12px so it stacks clear of the Draw and
  * QR toolbars, which occupy the space directly above a layer.
  */
+/**
+ * A ruler along one edge of the canvas.
+ *
+ * Drawn onto a canvas rather than with DOM ticks: a 1640-wide page has dozens
+ * of ticks and labels, and redrawing a small canvas each frame is far cheaper
+ * than reconciling that many elements. The origin is measured from the page
+ * element every frame, so scrolling, zooming and changing page all come out
+ * right without anything having to notify the ruler.
+ */
+const RulerStrip = ({
+  axis,
+  scale,
+  pageSize,
+  selection,
+  pageId,
+}: {
+  axis: 'x' | 'y';
+  scale: number;
+  pageSize: PageSize;
+  selection: SelectionBox | null;
+  pageId: string;
+}) => {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const latest = useRef({ scale, pageSize, selection });
+  latest.current = { scale, pageSize, selection };
+
+  useEffect(() => {
+    let frame = 0;
+    const draw = () => {
+      frame = window.requestAnimationFrame(draw);
+      const wrap = wrapRef.current;
+      const canvas = canvasRef.current;
+      const page = document.getElementById(pageId);
+      if (!wrap || !canvas || !page) return;
+
+      const strip = wrap.getBoundingClientRect();
+      const box = page.getBoundingClientRect();
+      if (strip.width < 2 || strip.height < 2) return;
+
+      const dpr = window.devicePixelRatio || 1;
+      const width = Math.round(strip.width);
+      const height = Math.round(strip.height);
+      if (canvas.width !== Math.round(width * dpr) || canvas.height !== Math.round(height * dpr)) {
+        canvas.width = Math.round(width * dpr);
+        canvas.height = Math.round(height * dpr);
+        canvas.style.width = `${width}px`;
+        canvas.style.height = `${height}px`;
+      }
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      const colors = rulerColors();
+      const { scale: currentScale, pageSize: currentSize, selection: currentSelection } =
+        latest.current;
+
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, width, height);
+      ctx.fillStyle = colors.bg;
+      ctx.fillRect(0, 0, width, height);
+
+      const horizontal = axis === 'x';
+      // Where the page's own zero sits, in this strip's coordinates.
+      const origin = horizontal ? box.left - strip.left : box.top - strip.top;
+      const pageLength = horizontal ? currentSize.width : currentSize.height;
+
+      if (currentSelection) {
+        const start = horizontal ? currentSelection.x : currentSelection.y;
+        const length = horizontal ? currentSelection.width : currentSelection.height;
+        ctx.fillStyle = colors.clear;
+        if (horizontal) {
+          ctx.fillRect(origin + start * currentScale, 0, length * currentScale, height);
+        } else {
+          ctx.fillRect(0, origin + start * currentScale, width, length * currentScale);
+        }
+      }
+
+      const extent = horizontal ? width : height;
+      const step = rulerStepFor(currentScale);
+      ctx.strokeStyle = colors.line;
+      ctx.fillStyle = colors.text;
+      ctx.lineWidth = 1;
+      ctx.font = '9px system-ui, -apple-system, sans-serif';
+      ctx.textBaseline = 'top';
+
+      for (let value = 0; value <= pageLength; value += step) {
+        const at = Math.round(origin + value * currentScale) + 0.5;
+        if (at < -20 || at > extent + 20) continue;
+        ctx.beginPath();
+        if (horizontal) {
+          ctx.moveTo(at, height - 5);
+          ctx.lineTo(at, height);
+          ctx.stroke();
+          ctx.fillText(String(value), at + 3, 2);
+        } else {
+          ctx.moveTo(width - 5, at);
+          ctx.lineTo(width, at);
+          ctx.stroke();
+          // Turned on its side, because the strip is only 20px wide.
+          ctx.save();
+          ctx.translate(2, at + 3);
+          ctx.rotate(Math.PI / 2);
+          ctx.fillText(String(value), 0, 0);
+          ctx.restore();
+        }
+      }
+    };
+
+    frame = window.requestAnimationFrame(draw);
+    return () => window.cancelAnimationFrame(frame);
+  }, [axis, pageId]);
+
+  const horizontal = axis === 'x';
+  return (
+    <div
+      ref={wrapRef}
+      data-ruler={axis}
+      css={{
+        position: 'relative',
+        flexShrink: 0,
+        overflow: 'hidden',
+        background: 'var(--app-ruler-bg)',
+        borderRight: horizontal ? undefined : '1px solid var(--app-border)',
+        borderBottom: horizontal ? '1px solid var(--app-border)' : undefined,
+        width: horizontal ? 'auto' : RULER_THICKNESS,
+        height: horizontal ? RULER_THICKNESS : 'auto',
+        // The strip must take its size from the layout, never from its canvas:
+        // a wrapper sized to the canvas that is sized to the wrapper settles on
+        // the canvas's 300px default and stops measuring the viewport.
+        flexGrow: horizontal ? 1 : 0,
+        minWidth: horizontal ? 0 : undefined,
+      }}
+    >
+      <canvas ref={canvasRef} css={{ display: 'block' }} />
+    </div>
+  );
+};
+
 const AlignToolbar = () => {
   const ctx = useContext(EditorContext);
   const scaleCtx = useContext(EditorScaleContext);
@@ -3142,6 +3491,7 @@ const AlignToolbar = () => {
 export const PageControl = () => {
   const { pages, activePage, scale, actions } = useEditor();
   const scaleCtx = useContext(EditorScaleContext);
+  const view = useContext(CanvasViewContext);
   return (
     <div
       css={{
@@ -3176,6 +3526,54 @@ export const PageControl = () => {
         Page {activePage + 1} / {pages.length || 1}
       </span>
       <div css={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        {view && (
+          <>
+            <button
+              type="button"
+              aria-pressed={view.showRulers}
+              title="Rulers (Shift+R)"
+              onClick={() => view.setShowRulers(!view.showRulers)}
+              css={{
+                background: view.showRulers ? 'var(--app-guide)' : 'transparent',
+                color: view.showRulers ? '#fff' : 'inherit',
+              }}
+            >
+              Rulers
+            </button>
+            <button
+              type="button"
+              aria-pressed={view.showGrid}
+              title="Grid (Shift+G)"
+              onClick={() => view.setShowGrid(!view.showGrid)}
+              css={{
+                background: view.showGrid ? 'var(--app-guide)' : 'transparent',
+                color: view.showGrid ? '#fff' : 'inherit',
+              }}
+            >
+              Grid
+            </button>
+            <select
+              aria-label="Grid size"
+              value={view.gridSize}
+              disabled={!view.showGrid}
+              onChange={(event) => view.setGridSize(Number(event.target.value))}
+              css={{
+                background: 'transparent',
+                color: 'inherit',
+                border: '1px solid var(--app-border)',
+                borderRadius: 4,
+                padding: '2px 4px',
+              }}
+            >
+              {GRID_SIZES.map((size) => (
+                <option key={size} value={size}>
+                  {size}px
+                </option>
+              ))}
+            </select>
+            <span css={{ opacity: 0.4 }}>|</span>
+          </>
+        )}
         <button
           type="button"
           onClick={() => scaleCtx?.setScale(Math.max(0.1, scale - 0.05))}

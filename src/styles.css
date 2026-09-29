@@ -16,6 +16,11 @@ html[data-theme='light'] {
   --app-tab-active: #ffffff;
   --app-canvas-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
   --app-guide: #3d8eff;
+  --app-grid-line: rgba(57, 76, 96, 0.16);
+  --app-ruler-bg: #ffffff;
+  --app-ruler-line: rgba(57, 76, 96, 0.32);
+  --app-ruler-text: #5e6278;
+  --app-ruler-selection: rgba(61, 142, 255, 0.18);
 }
 
 html[data-theme='dark'] {
@@ -34,6 +39,11 @@ html[data-theme='dark'] {
   --app-tab-active: #1a1a24;
   --app-canvas-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
   --app-guide: #6ea8ff;
+  --app-grid-line: rgba(255, 255, 255, 0.13);
+  --app-ruler-bg: #14141c;
+  --app-ruler-line: rgba(255, 255, 255, 0.26);
+  --app-ruler-text: #b4b8c7;
+  --app-ruler-selection: rgba(110, 168, 255, 0.22);
 }
 
 html, body {

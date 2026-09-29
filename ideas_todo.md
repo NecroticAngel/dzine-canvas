@@ -335,6 +335,23 @@ before you trust an `Invoke-RestMethod` assertion.
     modern user agent and **TrueType** for an old one. The editor parses fonts to draw glyph paths
     and has no woff2 decompressor, so a full Chrome UA in `scripts/seed-fonts.mjs` produced a
     catalogue nothing could load. The user agent is part of the contract, not a detail.
+23. **`useEditor()` with no selector returns a curated subset**, not the whole context — and its type
+    is an index signature, so asking for a field that is not in it **compiles fine and is
+    `undefined` at runtime**. That crashed the canvas with `ids is not iterable` when the new code
+    read `selectedLayerIds`. Use `useSelectedLayers()` or `useContext(EditorContext)` for anything
+    outside the subset.
+24. **A keydown handler inside an effect reads stale state.** The canvas key handler's dependencies
+    do not change when a view toggle flips, so `setShowGrid(!showGrid)` read a stale `showGrid` and
+    the shortcut appeared to do nothing. Use the updater form — which also means the setter must be
+    typed `Dispatch<SetStateAction<boolean>>`, not `(value: boolean) => void`.
+25. **A wrapper sized from its canvas that is sized from the wrapper settles on the canvas's 300px
+    default.** The horizontal ruler measured its own box to size its canvas, and the box was sized
+    by the canvas, so it stuck at 300px and never saw the viewport. The fix is to take the size from
+    the layout (`flexGrow: 1; minWidth: 0`), never from the child being measured.
+26. **Watch where an edit lands in a long `if/else` chain.** The Shift+R/G shortcuts were inserted
+    inside the `if (mod)` branch — the one for Ctrl/Cmd combinations — so plain Shift+letter never
+    reached them. The same edit silently deleted the neighbouring Ctrl+Y handler. Both were only
+    visible by actually pressing the keys.
 
 Test data in the library: `Portraitdfsfe` (used for testing),
 `Square` (created while reproducing the table bug — safe to delete).
@@ -400,7 +417,28 @@ Test data in the library: `Portraitdfsfe` (used for testing),
       - Verified: align top → all tops 508, Ctrl+Z restores; space-evenly → equal −38.58 gaps with
         extremes preserved; single-layer align-to-page → x 508 and y 1016, i.e. exactly
         (1080−64)/2 and 1080−64.
-- [ ] Optional: rulers, grid.
+- [x] **Rulers and grid — done.**
+      - **Rulers** along the top and left, labelled in page units with the step coarsening as you
+        zoom out (the smallest step that keeps labels ~60px apart). The origin is measured from the
+        page element every frame, so scrolling, zooming and changing page are all correct without
+        anything having to notify the ruler. The selection's extent is shaded on both rulers, which
+        is the part that makes them useful for measuring rather than just orienting.
+      - **Grid** drawn on the page in page units, so it stays locked to the design rather than the
+        screen; the line is `1/scale` wide, which keeps it one pixel at any zoom. Sizes 8–100px.
+      - Both are toggled from the footer next to the zoom controls, or with **Shift+R** / **Shift+G**,
+        and the choice is remembered in `localStorage`.
+      - Drawn onto a `<canvas>` rather than with DOM ticks: a 1640-wide page has dozens of ticks and
+        labels, and redrawing a small canvas each frame is far cheaper than reconciling that many
+        elements. Theme colours are re-read at most once a second, because `getComputedStyle` per
+        frame per ruler is a style recalc for two strings.
+      - Verified in the browser: the labelled ruler aligns its zero with the page edge, ticks are
+        genuinely drawn (sampled dark pixels in the canvas), the grid responds to the size control,
+        the keyboard shortcuts round-trip in both directions, the footer buttons stay in step, and
+        the preference survives a reload.
+- [ ] **Not included: snapping to the grid.** The grid is a measuring aid here; pulling layers to it
+      would need a branch in `computeSnap` alongside the existing guide snapping.
+- [ ] Not included either: dragging guides out of the rulers. The editor's existing guides are the
+      transient alignment lines shown *during* a drag, not user-placed rulers guides.
 
 ### Tier 2.5 — ✅ DRAGS AND RESIZES ARE NOW UNDOABLE (`5469d8f`)
 - [x] `startInteraction` patched the page live via `updateLayerBox` → `patchLayerLive`, which
