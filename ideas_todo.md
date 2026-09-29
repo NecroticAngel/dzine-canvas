@@ -241,8 +241,11 @@ with them, and creates its own designs. Decisions already taken: orgs with multi
   parse and written from another, so it was discarded and the banner never appeared. See gotcha 19.
 
 **Next**
-1. Tier 2 rulers/grid, Tier 6 QR polish, Tier 7 differentiators.
-2. Deferred cleanups at the bottom of §5.
+1. Tier 7 differentiators (magic resize, brand kit, share links).
+2. Third-party font origins (`lidojs-fonts.s3…`, `fonts.gstatic.com`) — see §5. The last external
+   dependency the editor has, and the same class of problem Tier 4 fixed for googleapis.
+3. Export selected-layer-only, which needs the layer renderer to stamp an id.
+4. Deferred cleanups at the bottom of §5.
 
 **Also known (not scheduled)**
 - **The upload queue is in memory only, so a page reload inside the 800 ms debounce silently loses
@@ -352,6 +355,25 @@ before you trust an `Invoke-RestMethod` assertion.
     inside the `if (mod)` branch — the one for Ctrl/Cmd combinations — so plain Shift+letter never
     reached them. The same edit silently deleted the neighbouring Ctrl+Y handler. Both were only
     visible by actually pressing the keys.
+
+Test data in the library: `Portraitdfsfe` (used for testing),
+`Square` (created while reproducing the table bug — safe to delete).
+
+27. **`qrcode`'s browser build parses colours itself and only accepts hex.** Passing the `rgb(r, g, b)`
+    that layer props and the presets actually store throws `Invalid hex color: rgb(30, 30, 45)` — from
+    inside a promise, so it fails silently into a blank tile. Both `QRCode.toDataURL` and
+    `QRCode.toString` are affected; `toDataURL` on a *canvas* element is the same renderer. Always go
+    through `colorToHex` (`src/utils/color.ts`). This had been worked around twice before anyone
+    noticed the cause, which is why there were two near-identical private copies of the converter.
+28. **Destructuring a prop out to read it and never putting it back silently drops it.** The QR panel
+    pulls `textColor` out of the preset's props to colour the placeholder icon; `...rest` therefore no
+    longer had it, so every inserted QR lost its own dark colour. It went unnoticed because the
+    renderer's fallback is the same value as the preset's — only reading the *saved* JSON showed it.
+    Verify what is stored, not just what is drawn.
+29. **A panel thumbnail that is a static PNG can contradict the preset.** The three QR thumbnails
+    advertised a logo and "SCAN ME" branding that `addQrCode` strips before inserting. Drawing the
+    tile from the preset's own payload and colours means it cannot drift — the same reasoning as the
+    template previews, and it removed 22 KB of assets and 94 KB of dead base64 from the bundle.
 
 Test data in the library: `Portraitdfsfe` (used for testing),
 `Square` (created while reproducing the table bug — safe to delete).
@@ -508,11 +530,39 @@ Test data in the library: `Portraitdfsfe` (used for testing),
 - Note: a multi-page PDF places every page at the active page's size. Designs whose pages share one
       size — the normal case — are exact.
 
-### Tier 6 — QR polish
-- [ ] Replace the 3 misleading panel thumbnails (`public/assets/images/qr-code/{1,2,3}.png` still
-      show shipped branding / "SCAN ME").
-- [ ] `src/features/design/config/qrCode.tsx` is ~105 KB, mostly baked-in base64 logos — slim it.
-- [ ] More payload types: WiFi / vCard / SMS / email. Error-correction level. SVG download.
+### Tier 6 — QR polish — ✅ DONE
+- [x] The three misleading thumbnails are gone (`public/assets/images/qr-code/{1,2,3}.png` deleted).
+      The panel draws each tile instead, from the preset's own payload, colours, card and caption, so
+      a thumbnail cannot advertise a preset that does not exist (gotcha 29).
+- [x] `src/features/design/config/qrCode.tsx` went **104.6 KB → 12.9 KB**. Each preset carried a 31 KB
+      base64 logo that `addQrCode` replaces unconditionally — pure dead weight. `scripts/slim-qr-presets.mjs`
+      did the strip and prints a size report; it is a one-off, kept for the record.
+- [x] More payload types: **WiFi, contact card (vCard), SMS, email, phone, plain text**, alongside a
+      URL. The one that needed care is escaping, which is where these grammars break: WiFi uses `;`
+      between fields and `:` inside them, so a password containing either has to be escaped or the
+      scanner reads a shorter value. `src/utils/qrPayload.ts` owns the builders and the escaping;
+      the panel shows the exact string it will encode, so a stray delimiter is visible before you
+      commit to it. Verified against the running app: 14 assertions over the grammars, and the
+      escaped payload survives save and reload.
+- [x] Error-correction level (L/M/Q/H) in the QR toolbar, stored on the layer, defaulting to `H` so
+      existing designs render byte-identically. Dropping to L or M with an icon in place highlights
+      the control and says why — a logo covers modules only Q and H keep recoverable.
+- [x] **SVG download** from the QR toolbar. The on-canvas code is a PNG with an `<img>` logo over it,
+      which has nothing to export, so the logo is rebuilt as an `<image>` on a plate of the code's own
+      light colour at the same 22% the layer uses. Verified: a 3 KB `image/svg+xml` blob with
+      `viewBox`-derived geometry, `xmlns:xlink` declared and the image centred at `(31-6.82)/2`.
+- Also fixed here: `textColor` no longer disappears on insert (gotcha 28), and the two private copies
+      of the colour converter are now one shared `colorToHex` (gotcha 27).
+
+### New — found while doing Tier 6: third-party font origins (not scheduled)
+- **`src/constant/data.ts` and `src/constant/text-effects.ts` still load fonts from
+  `lidojs-fonts.s3.us-east-2.amazonaws.com`** (22 references) and one from `fonts.gstatic.com`.
+  These are someone else's buckets. Tier 4 removed the *googleapis* calls but these were missed, and
+  they are the same class of problem: if the bucket goes, every text effect and several templates
+  fall back to a system font. The local catalogue from Tier 4 (`api/data/fonts.json`, 22 families /
+  71 TrueType faces, served from `/api/fonts` with CORS) is the obvious replacement — and note the
+  editor still cannot decompress woff2, so the replacements must be `.ttf` (gotcha 22).
+- Not a crash, so it does not block anything; worth doing before this is handed to a client.
 
 ### Tier 7 — differentiators
 - [ ] Magic resize (change canvas size, rescale/reflow layers) — Canva's killer feature.

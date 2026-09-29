@@ -38,6 +38,8 @@ import {
   type DesignSummary,
 } from '../../utils/designLibrary';
 import { captureThumbnail } from '../../utils/exportDesign';
+import { downloadBlob } from '../../utils/download';
+import { colorToHex } from '../../utils/color';
 
 export type DeepPartial<T> = {
   [P in keyof T]?: T[P] extends object ? DeepPartial<T[P]> : T[P];
@@ -427,14 +429,78 @@ const buildTextDoc = (existingDoc: unknown, text: string) => {
 
 const HANDLE_SIZE = 10;
 
-const colorToHex = (color: string, fallback: string) => {
-  const value = color.trim();
-  if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(value)) return value;
-  const match = value.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
-  if (!match) return fallback;
-  return `#${[match[1], match[2], match[3]]
-    .map((part) => Number(part).toString(16).padStart(2, '0'))
-    .join('')}`;
+/**
+ * Error correction, as a share of the code recoverable if it is damaged.
+ *
+ * `H` is the default because a logo punched into the middle *is* damage as far
+ * as the encoder is concerned, and it costs a few extra modules to keep the
+ * code readable with one. Dropping to `L` makes a denser, smaller-looking code
+ * that a phone will fail to read if the logo is left in, so the toolbar warns
+ * about that combination rather than silently producing a broken code.
+ */
+type QrErrorLevel = 'L' | 'M' | 'Q' | 'H';
+
+const QR_ERROR_LEVELS: { value: QrErrorLevel; label: string }[] = [
+  { value: 'L', label: 'L - 7%' },
+  { value: 'M', label: 'M - 15%' },
+  { value: 'Q', label: 'Q - 25%' },
+  { value: 'H', label: 'H - 30%' },
+];
+
+/** Layers saved before this option existed have no level, and want `H`. */
+const readErrorLevel = (value: unknown): QrErrorLevel =>
+  value === 'L' || value === 'M' || value === 'Q' ? value : 'H';
+
+/** Escape a value for use inside an XML attribute. */
+const xmlAttr = (value: string) =>
+  value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/"/g, '&quot;');
+
+/**
+ * Render a QR code to standalone SVG, with the centre logo composited in.
+ *
+ * The on-canvas layer is a PNG with an `<img>` logo positioned over it, which
+ * is fine on screen but has nothing to export — a downloaded SVG that dropped
+ * the logo would not match what the user had just arranged. The logo is rebuilt
+ * as an `<image>` at the same 22% the layer uses, on a plate of the code's own
+ * light colour, so the two agree.
+ */
+const buildQrSvg = async (
+  text: string,
+  bgColor: string,
+  textColor: string,
+  logo: string | undefined,
+  errorCorrectionLevel: QrErrorLevel,
+): Promise<string> => {
+  const svg = await QRCode.toString(text.trim() || ' ', {
+    type: 'svg',
+    errorCorrectionLevel,
+    margin: 1,
+    color: {
+      dark: colorToHex(textColor, '#1e1e2d'),
+      light: colorToHex(bgColor, '#ffffff'),
+    },
+  });
+  if (!logo) return svg;
+  // qrcode emits a unit-based viewBox with no width/height, so the geometry has
+  // to come from the viewBox rather than from the element's own size.
+  const viewBox = /viewBox="0 0 ([\d.]+)/.exec(svg);
+  if (!viewBox) return svg;
+  const size = Number(viewBox[1]);
+  const box = size * 0.22;
+  const offset = (size - box) / 2;
+  const plate =
+    `<rect x="${offset}" y="${offset}" width="${box}" height="${box}" ` +
+    `rx="${(size * 0.02).toFixed(3)}" fill="${colorToHex(bgColor, '#ffffff')}"/>`;
+  const image =
+    `<image x="${offset}" y="${offset}" width="${box}" height="${box}" ` +
+    `preserveAspectRatio="xMidYMid meet" xlink:href="${xmlAttr(logo)}"/>`;
+  const rooted = svg.includes('xmlns:xlink')
+    ? svg
+    : svg.replace('<svg ', '<svg xmlns:xlink="http://www.w3.org/1999/xlink" ');
+  return rooted.replace('</svg>', `${plate}${image}</svg>`);
 };
 
 const QrCodeView = ({
@@ -442,11 +508,13 @@ const QrCodeView = ({
   bgColor,
   textColor,
   logo,
+  errorCorrectionLevel,
 }: {
   text: string;
   bgColor: string;
   textColor: string;
   logo?: string;
+  errorCorrectionLevel: QrErrorLevel;
 }) => {
   const [src, setSrc] = useState('');
 
@@ -454,7 +522,7 @@ const QrCodeView = ({
     let cancelled = false;
     const payload = text.trim() || ' ';
     QRCode.toDataURL(payload, {
-      errorCorrectionLevel: 'H',
+      errorCorrectionLevel,
       margin: 1,
       width: 512,
       color: {
@@ -471,7 +539,7 @@ const QrCodeView = ({
     return () => {
       cancelled = true;
     };
-  }, [text, bgColor, textColor]);
+  }, [text, bgColor, textColor, errorCorrectionLevel]);
 
   return (
     <div
@@ -1134,6 +1202,7 @@ const LayerView = ({
           bgColor={String(props.bgColor ?? '#ffffff')}
           textColor={String(props.textColor ?? '#1e1e2d')}
           logo={props.logo ? String(props.logo) : undefined}
+          errorCorrectionLevel={readErrorLevel(props.errorCorrectionLevel)}
         />
       );
     }
@@ -1405,19 +1474,6 @@ const TableCellView = ({
   );
 };
 
-/**
- * `<input type="color">` only accepts `#rrggbb`, but cells store colours as
- * `rgb(r, g, b)`. Convert so the swatch shows the real colour.
- */
-const toHexColor = (value: unknown, fallback: string): string => {
-  const raw = String(value ?? '').trim();
-  if (/^#[0-9a-f]{6}$/i.test(raw)) return raw;
-  const match = raw.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
-  if (!match) return fallback;
-  const hex = (part: string) => Number(part).toString(16).padStart(2, '0');
-  return `#${hex(match[1])}${hex(match[2])}${hex(match[3])}`;
-};
-
 const FONT_SIZES = ['12px', '14px', '16px', '18px', '20px', '24px', '28px', '32px', '40px', '48px'];
 
 /**
@@ -1563,7 +1619,7 @@ const CellToolbar = () => {
         type="color"
         title="Text colour"
         aria-label="Text colour"
-        value={toHexColor(attrs.color, '#333333')}
+        value={colorToHex(attrs.color, '#333333')}
         onChange={(event) => update({ attrs: { color: event.target.value } })}
         css={{ width: 28, height: 28, padding: 0, border: '1px solid var(--app-border)', borderRadius: 6, background: 'transparent', cursor: 'pointer' }}
       />
@@ -1585,7 +1641,7 @@ const CellToolbar = () => {
         type="color"
         title="Cell background"
         aria-label="Cell background"
-        value={toHexColor(target?.background, '#ffffff')}
+        value={colorToHex(target?.background, '#ffffff')}
         onChange={(event) => update({ background: event.target.value })}
         css={{ width: 28, height: 28, padding: 0, border: '1px solid var(--app-border)', borderRadius: 6, background: 'transparent', cursor: 'pointer' }}
       />
@@ -1604,6 +1660,7 @@ const QrToolbar = () => {
   const ctx = useContext(EditorContext);
   const [anchor, setAnchor] = useState<{ top: number; left: number } | null>(null);
   const [draft, setDraft] = useState('');
+  const [exporting, setExporting] = useState(false);
   const logoInputRef = useRef<HTMLInputElement | null>(null);
 
   const selectedIds = ctx?.selectedLayerIds ?? [];
@@ -1612,6 +1669,9 @@ const QrToolbar = () => {
   const layer = qrId ? page?.layers?.[qrId] : undefined;
   const isQr = layer?.type?.resolvedName === 'QrCodeLayer';
   const props = (layer?.props ?? {}) as Record<string, unknown>;
+  const level = readErrorLevel(props.errorCorrectionLevel);
+  /** A logo covers modules that only `Q` and `H` keep recoverable. */
+  const logoNeedsMore = !!props.logo && (level === 'L' || level === 'M');
 
   useEffect(() => {
     if (!isQr) {
@@ -1645,6 +1705,24 @@ const QrToolbar = () => {
   }, [qrId, layerText]);
 
   if (!ctx || !isQr || !qrId || !anchor) return null;
+
+  /** Hand the code over as a real SVG file, logo and all. */
+  const downloadSvg = () => {
+    if (exporting) return;
+    setExporting(true);
+    buildQrSvg(
+      String(props.text ?? ''),
+      String(props.bgColor ?? '#ffffff'),
+      String(props.textColor ?? '#1e1e2d'),
+      props.logo ? String(props.logo) : undefined,
+      level,
+    )
+      .then((svg) => {
+        downloadBlob('qr-code.svg', new Blob([svg], { type: 'image/svg+xml' }));
+      })
+      .catch(() => undefined)
+      .finally(() => setExporting(false));
+  };
 
   const controlCss = {
     height: 28,
@@ -1692,7 +1770,7 @@ const QrToolbar = () => {
         type="color"
         aria-label="QR dark colour"
         title="QR colour"
-        value={toHexColor(props.textColor, '#1e1e2d')}
+        value={colorToHex(props.textColor, '#1e1e2d')}
         onChange={(event) =>
           ctx.actions.updateLayerProps(qrId, { textColor: event.target.value })
         }
@@ -1702,7 +1780,7 @@ const QrToolbar = () => {
         type="color"
         aria-label="QR light colour"
         title="QR background"
-        value={toHexColor(props.bgColor, '#ffffff')}
+        value={colorToHex(props.bgColor, '#ffffff')}
         onChange={(event) =>
           ctx.actions.updateLayerProps(qrId, { bgColor: event.target.value })
         }
@@ -1767,6 +1845,53 @@ const QrToolbar = () => {
           Clear
         </button>
       ) : null}
+      <span css={{ width: 1, height: 18, background: 'var(--app-border)' }} />
+      <select
+        aria-label="QR error correction"
+        title={
+          logoNeedsMore
+            ? 'An icon needs Q or H to stay readable'
+            : 'How much damage the code tolerates'
+        }
+        value={level}
+        onChange={(event) =>
+          ctx.actions.updateLayerProps(qrId, {
+            errorCorrectionLevel: readErrorLevel(event.target.value),
+          })
+        }
+        css={{
+          ...controlCss,
+          padding: '0 4px',
+          cursor: 'pointer',
+          borderColor: logoNeedsMore ? '#ff8f8f' : 'var(--app-border)',
+        }}
+      >
+        {QR_ERROR_LEVELS.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      <button
+        type="button"
+        title="Download this code as an SVG"
+        onClick={downloadSvg}
+        disabled={exporting}
+        css={{
+          height: 28,
+          padding: '0 10px',
+          border: '1px solid var(--app-border)',
+          background: 'transparent',
+          color: 'var(--app-text-strong)',
+          borderRadius: 6,
+          fontSize: 12,
+          fontWeight: 700,
+          cursor: 'pointer',
+          ':disabled': { opacity: 0.5, cursor: 'progress' },
+        }}
+      >
+        SVG
+      </button>
     </div>
   );
 };
@@ -1891,7 +2016,7 @@ const DrawToolbar = () => {
         type="color"
         aria-label="Stroke colour"
         title="Stroke colour"
-        value={toHexColor(stroke, '#000000')}
+        value={colorToHex(stroke, '#000000')}
         onChange={(event) => apply({ stroke: event.target.value })}
         css={{ ...controlCss, width: 28, padding: 0, cursor: 'pointer' }}
       />
