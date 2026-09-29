@@ -375,10 +375,52 @@ export type SyncStatus = 'idle' | 'pending' | 'saving' | 'error';
 
 const FLUSH_DELAY = 800;
 const RETRY_DELAY = 5000;
+const QUEUE_KEY = 'necrozine-sync-queue';
 
 let syncStatus: SyncStatus = 'idle';
 const statusListeners = new Set<(status: SyncStatus) => void>();
-const pending = new Map<string, 'upsert' | 'delete'>();
+
+/**
+ * The queue is persisted, not just in memory.
+ *
+ * It used to be a bare Map, which meant a reload inside the 800 ms debounce threw
+ * the operation away. A lost save is recoverable — the design is still in
+ * localStorage and the next hydrate re-uploads it — but a lost *delete* is not:
+ * the design is already gone locally, the server keeps its copy, and the next
+ * hydrate puts it back. That reads as "delete is broken".
+ */
+const readQueue = (): Map<string, 'upsert' | 'delete'> => {
+  const queue = new Map<string, 'upsert' | 'delete'>();
+  try {
+    const raw = localStorage.getItem(QUEUE_KEY);
+    if (!raw) return queue;
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return queue;
+    for (const entry of parsed) {
+      const [id, op] = Array.isArray(entry) ? entry : [];
+      if (typeof id === 'string' && (op === 'upsert' || op === 'delete')) {
+        queue.set(id, op);
+      }
+    }
+  } catch {
+    // A corrupt queue is not worth failing over; the designs are intact.
+  }
+  return queue;
+};
+
+const writeQueue = () => {
+  try {
+    if (!pending.size) {
+      localStorage.removeItem(QUEUE_KEY);
+      return;
+    }
+    localStorage.setItem(QUEUE_KEY, JSON.stringify([...pending.entries()]));
+  } catch {
+    // Quota or a locked-down browser: fall back to memory-only for this session.
+  }
+};
+
+const pending = readQueue();
 let flushTimer: number | null = null;
 let hydratePromise: Promise<void> | null = null;
 
@@ -422,6 +464,7 @@ const scheduleFlush = (delay: number) => {
 const markDirty = (id: string, op: 'upsert' | 'delete') => {
   if (op === 'upsert' && pending.get(id) === 'delete') return;
   pending.set(id, op);
+  writeQueue();
   setSyncStatus('pending');
   scheduleFlush(FLUSH_DELAY);
 };
@@ -465,10 +508,12 @@ const flushPending = async () => {
   }
 
   if (failed) {
+    writeQueue();
     setSyncStatus('error');
     scheduleFlush(RETRY_DELAY);
     return;
   }
+  writeQueue();
   setSyncStatus(pending.size ? 'pending' : 'idle');
 };
 
@@ -496,14 +541,26 @@ export const hydrateLibrary = (): Promise<void> => {
 
     const store = readStore();
 
+    // A design queued for deletion must not come back: the server still has it
+    // until the delete lands, and adopting it here would resurrect it locally.
+    const queuedDeletes = new Set(
+      [...pending.entries()]
+        .filter(([, op]) => op === 'delete')
+        .map(([id]) => id),
+    );
+
     if (!remote.length) {
       // Nothing in the account yet, so push whatever this browser has.
-      for (const design of store?.designs ?? []) markDirty(design.id, 'upsert');
+      for (const design of store?.designs ?? []) {
+        if (queuedDeletes.has(design.id)) continue;
+        markDirty(design.id, 'upsert');
+      }
       return;
     }
 
     const designs: SavedDesign[] = [];
     for (const summary of remote) {
+      if (queuedDeletes.has(summary.id)) continue;
       const local = store?.designs.find((design) => design.id === summary.id);
       const remoteUpdatedAt = Number(summary.updatedAt) || 0;
 
@@ -551,6 +608,7 @@ export const hydrateLibrary = (): Promise<void> => {
     for (const design of store?.designs ?? []) {
       if (designs.some((item) => item.id === design.id)) continue;
       if (design.placeholder) continue;
+      if (queuedDeletes.has(design.id)) continue;
       designs.push(design);
       markDirty(design.id, 'upsert');
     }
@@ -568,3 +626,14 @@ export const hydrateLibrary = (): Promise<void> => {
 
   return hydratePromise;
 };
+
+/**
+ * Operations restored from a previous session go out as soon as the module
+ * loads. Nothing else would trigger a flush for them: they belong to designs the
+ * user has not touched since, or to designs that no longer exist locally, and
+ * `scheduleFlush` only ever runs from a mutation.
+ */
+if (pending.size) {
+  setSyncStatus('pending');
+  scheduleFlush(FLUSH_DELAY);
+}

@@ -29,3 +29,7 @@ api/data/templates/thumbs/
 
 # Generated exports (a 58 MB version of output-from-templates.pdf sits in history).
 output-*.pdf
+
+# Storage backups (scripts/backup-storage.mjs). Point --out at another volume in
+# production; this ignore is for the local default.
+backups/

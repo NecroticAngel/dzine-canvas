@@ -34,6 +34,7 @@ import {
   isTemplateVisible,
   knownDesignIds,
   listAllTemplates,
+  listAudit,
   listDesigns,
   listInvites,
   listMembers,
@@ -42,6 +43,7 @@ import {
   listTenants,
   liveDesignCount,
   openDatabase,
+  recordAudit,
   revokeTemplateGrant,
   upsertDesign,
   upsertTemplate,
@@ -133,11 +135,98 @@ api.use((req, res, next) => {
   void identity(req, res, next);
 });
 
+/**
+ * A small in-memory limiter, keyed by tenant and address.
+ *
+ * This deployment runs a single replica, so per-process state is the whole
+ * story; the point is to stop one client hammering the API or treating uploads
+ * as free storage, not to be defence in depth on its own. The limits are
+ * configurable so a busy client can be raised without a code change.
+ *
+ * Mounted after identity resolution, so the key can include the tenant rather
+ * than only an address. Requests that fail authentication are rejected by the
+ * identity middleware before reaching this.
+ */
+const rateLimit = ({ windowMs, max, name }) => {
+  const hits = new Map();
+  let lastSweep = Date.now();
+  return (req, res, next) => {
+    const now = Date.now();
+    if (now - lastSweep > windowMs) {
+      for (const [key, entry] of hits) if (entry.reset <= now) hits.delete(key);
+      lastSweep = now;
+    }
+    const key = `${req.identity?.tenantId ?? 'anonymous'}|${req.ip}`;
+    let entry = hits.get(key);
+    if (!entry || entry.reset <= now) {
+      entry = { count: 0, reset: now + windowMs };
+    }
+    entry.count += 1;
+    hits.set(key, entry);
+
+    res.setHeader('RateLimit-Limit', String(max));
+    res.setHeader('RateLimit-Remaining', String(Math.max(0, max - entry.count)));
+    if (entry.count > max) {
+      res.setHeader('Retry-After', String(Math.ceil((entry.reset - now) / 1000)));
+      res.status(429).json({
+        error: `Too many ${name} requests. Try again in a moment.`,
+        code: 'rate-limited',
+      });
+      return;
+    }
+    next();
+  };
+};
+
+const numberFromEnv = (name, fallback) => {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+};
+
+const readLimit = rateLimit({
+  windowMs: 60_000,
+  max: numberFromEnv('RATE_LIMIT_READS_PER_MINUTE', 1200),
+  name: 'read',
+});
+const writeLimit = rateLimit({
+  windowMs: 60_000,
+  max: numberFromEnv('RATE_LIMIT_WRITES_PER_MINUTE', 240),
+  name: 'write',
+});
+const uploadLimit = rateLimit({
+  windowMs: 60_000,
+  max: numberFromEnv('RATE_LIMIT_UPLOADS_PER_MINUTE', 30),
+  name: 'upload',
+});
+
+// Reads and writes get separate budgets: browsing a gallery should never be the
+// thing that stops you saving.
+api.use((req, res, next) => {
+  const limit =
+    req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS'
+      ? readLimit
+      : writeLimit;
+  limit(req, res, next);
+});
+
 // The tenant every request belongs to. Resolved from a verified identity — a
 // caller can no longer name the tenant it wants to read.
 const tenantOf = (req) => req.identity.tenantId;
 
 const pathsFor = (req) => getStoragePaths(tenantOf(req));
+
+/**
+ * Record who changed what. The caller's tenant is the default, but an admin
+ * acting on another workspace passes `tenantId` so the entry lands in the
+ * client's own log rather than the admin's.
+ */
+const audit = (req, entry) =>
+  recordAudit(db, {
+    tenantId: tenantOf(req),
+    memberId: req.identity.member.id,
+    memberEmail: req.identity.member.email,
+    ...entry,
+  });
 
 const absoluteUrl = (req, pathname) => {
   if (/^https?:\/\//i.test(pathname)) return pathname;
@@ -465,18 +554,65 @@ const readUploads = (uploadsDir, req) => {
     .sort((a, b) => a.name.localeCompare(b.name));
 };
 
+/**
+ * What a file actually is, decided by its bytes.
+ *
+ * The upload used to keep whatever extension the client sent and serve it back
+ * from our own origin, so "logo.png" could be HTML or a script-bearing SVG and
+ * the browser would be invited to run it. The extension is now derived from the
+ * content and the client's is ignored entirely.
+ */
+const startsWithBytes = (buffer, bytes) =>
+  buffer.length >= bytes.length &&
+  buffer.subarray(0, bytes.length).equals(Buffer.from(bytes));
+
+const detectImageExtension = (buffer) => {
+  if (startsWithBytes(buffer, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) {
+    return 'png';
+  }
+  if (startsWithBytes(buffer, [0xff, 0xd8, 0xff])) return 'jpg';
+  if (startsWithBytes(buffer, [0x47, 0x49, 0x46, 0x38])) return 'gif';
+  if (
+    startsWithBytes(buffer, [0x52, 0x49, 0x46, 0x46]) &&
+    buffer.length >= 12 &&
+    buffer.subarray(8, 12).toString('latin1') === 'WEBP'
+  ) {
+    return 'webp';
+  }
+  // SVG is text, and an XML declaration or comment may precede the root element.
+  const head = buffer.subarray(0, 1024);
+  if (!head.includes(0) && /<svg[\s>]/i.test(head.toString('utf8'))) return 'svg';
+  return null;
+};
+
+const UPLOAD_MIME = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  svg: 'image/svg+xml',
+};
+
 const upload = multer({
-  storage: multer.diskStorage({
-    destination: (req, _file, cb) => {
-      cb(null, pathsFor(req).uploadsDir);
-    },
-    filename: (_req, file, cb) => {
-      const ext = path.extname(file.originalname || '') || '.png';
-      cb(null, `${Date.now()}-${randomUUID().slice(0, 8)}${ext.toLowerCase()}`);
-    },
-  }),
-  limits: { fileSize: 15 * 1024 * 1024 },
+  // In memory, so nothing reaches the disk before its content has been checked.
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 15 * 1024 * 1024, files: 1 },
 });
+
+/** Run multer and turn its errors into something a client can act on. */
+const uploadSingle = (req, res, next) =>
+  upload.single('file')(req, res, (error) => {
+    if (!error) {
+      next();
+      return;
+    }
+    if (error.code === 'LIMIT_FILE_SIZE') {
+      res.status(413).json({ error: 'That file is larger than the 15 MB limit' });
+      return;
+    }
+    res.status(400).json({ error: 'Upload rejected' });
+  });
 
 api.get('/media/uploads/:userId/:file', (req, res) => {
   // Kept because URLs of this shape are already embedded in saved designs, but
@@ -492,6 +628,16 @@ api.get('/media/uploads/:userId/:file', (req, res) => {
     res.status(404).json({ error: 'Upload not found' });
     return;
   }
+  // Uploaded content is untrusted and comes back from our own origin. An SVG
+  // can carry script, so it is served with a policy that forbids everything and
+  // a type that is never sniffed into something executable.
+  const extension = path.extname(filePath).slice(1).toLowerCase();
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+  );
+  res.type(UPLOAD_MIME[extension] ?? 'application/octet-stream');
   res.sendFile(filePath);
 });
 
@@ -574,6 +720,7 @@ api.post('/admin/tenants', requireAdmin, (req, res) => {
       ? req.body.name.trim()
       : id;
   ensureTenant(db, id, name);
+  audit(req, { action: 'tenant.create', targetType: 'tenant', targetId: id, detail: { name } });
   res.status(201).json(getTenant(db, id));
 });
 
@@ -592,18 +739,32 @@ api.post('/admin/invites', requireAdmin, (req, res) => {
   }
   const tenantId = safeId(req.body?.tenantId ?? req.identity.tenantId);
   ensureTenant(db, tenantId, String(req.body?.tenantName ?? tenantId));
-  res.status(201).json(
-    createInvite(db, {
-      email,
-      tenantId,
-      role: req.body?.role === 'admin' ? 'admin' : 'member',
-      invitedBy: req.identity.member.id,
-    }),
-  );
+  const invite = createInvite(db, {
+    email,
+    tenantId,
+    role: req.body?.role === 'admin' ? 'admin' : 'member',
+    invitedBy: req.identity.member.id,
+  });
+  audit(req, {
+    tenantId,
+    action: 'invite.create',
+    targetType: 'invite',
+    targetId: email,
+    detail: { role: invite.role },
+  });
+  res.status(201).json(invite);
 });
 
 api.delete('/admin/invites/:email', requireAdmin, (req, res) => {
-  res.status(deleteInvite(db, req.params.email) ? 204 : 404).end();
+  const removed = deleteInvite(db, req.params.email);
+  if (removed) {
+    audit(req, {
+      action: 'invite.delete',
+      targetType: 'invite',
+      targetId: req.params.email,
+    });
+  }
+  res.status(removed ? 204 : 404).end();
 });
 
 api.get('/admin/members', requireAdmin, (req, res) => {
@@ -775,6 +936,13 @@ api.post('/templates', (req, res) => {
     thumbPath,
     createdBy: req.identity.member.id,
   });
+  audit(req, {
+    tenantId: ownerTenant,
+    action: 'template.create',
+    targetType: 'template',
+    targetId: id,
+    detail: { name, scope, sourceDesignId: req.body?.sourceDesignId ?? null },
+  });
   res.status(201).json(templateResponse(req, row, readTemplatePayload(dir, id)));
 });
 
@@ -801,6 +969,12 @@ api.delete('/templates/:id', (req, res) => {
   ]) {
     if (file && existsSync(file)) unlinkSync(file);
   }
+  audit(req, {
+    action: 'template.delete',
+    targetType: 'template',
+    targetId: id,
+    detail: { name: row.name, scope: row.scope },
+  });
   res.status(204).end();
 });
 
@@ -845,6 +1019,12 @@ api.post('/templates/:id/use', (req, res) => {
     updatedAt: now,
     bytes: Buffer.byteLength(serialized),
     thumbPath,
+  });
+  audit(req, {
+    action: 'template.use',
+    targetType: 'template',
+    targetId: id,
+    detail: { designId, name },
   });
   res.status(201).json({
     id: designId,
@@ -891,16 +1071,38 @@ api.post('/admin/template-grants', requireAdmin, (req, res) => {
   }
   const before = listTemplateGrants(db, templateId).length;
   const grants = grantTemplate(db, templateId, tenantId);
+  if (before !== grants.length) {
+    audit(req, {
+      tenantId,
+      action: 'template.grant',
+      targetType: 'template',
+      targetId: templateId,
+      detail: { sharedWith: tenantId },
+    });
+  }
   res.status(before === grants.length ? 200 : 201).json({ grants });
 });
 
 api.delete('/admin/template-grants/:templateId/:tenantId', requireAdmin, (req, res) => {
-  const removed = revokeTemplateGrant(
-    db,
-    safeId(req.params.templateId),
-    safeId(req.params.tenantId),
-  );
+  const templateId = safeId(req.params.templateId);
+  const tenantId = safeId(req.params.tenantId);
+  const removed = revokeTemplateGrant(db, templateId, tenantId);
+  if (removed) {
+    audit(req, {
+      tenantId,
+      action: 'template.revoke',
+      targetType: 'template',
+      targetId: templateId,
+      detail: { noLongerSharedWith: tenantId },
+    });
+  }
   res.status(removed ? 204 : 404).end();
+});
+
+/** The audit trail. Admins only; the log names members and what they touched. */
+api.get('/admin/audit', requireAdmin, (req, res) => {
+  const tenantId = req.query.tenantId ? safeId(req.query.tenantId) : null;
+  res.json(listAudit(db, { tenantId, limit: req.query.limit }));
 });
 
 /** Designs */
@@ -992,6 +1194,12 @@ api.put('/designs/:id', (req, res) => {
     bytes: Buffer.byteLength(serialized),
     thumbPath,
   });
+  audit(req, {
+    action: 'design.update',
+    targetType: 'design',
+    targetId: id,
+    detail: { name, bytes: Buffer.byteLength(serialized) },
+  });
   res.json({
     id,
     name,
@@ -1038,6 +1246,12 @@ api.post('/designs', (req, res) => {
     bytes: Buffer.byteLength(serialized),
     thumbPath,
   });
+  audit(req, {
+    action: 'design.create',
+    targetType: 'design',
+    targetId: id,
+    detail: { name, bytes: Buffer.byteLength(serialized) },
+  });
   res.status(201).json({
     id,
     name,
@@ -1062,6 +1276,12 @@ api.delete('/designs/:id', (req, res) => {
     const thumbPath = path.join(thumbsDir, path.basename(row.thumbPath));
     if (existsSync(thumbPath)) unlinkSync(thumbPath);
   }
+  audit(req, {
+    action: 'design.delete',
+    targetType: 'design',
+    targetId: row.id,
+    detail: { name: row.name },
+  });
   res.status(204).end();
 });
 
@@ -1071,22 +1291,39 @@ api.get('/uploads', (req, res) => {
   res.json(readUploads(uploadsDir, req));
 });
 
-api.post('/uploads', upload.single('file'), (req, res) => {
+api.post('/uploads', uploadLimit, uploadSingle, (req, res) => {
   if (!req.file) {
     res.status(400).json({ error: 'Expected multipart field "file"' });
     return;
   }
+  const extension = detectImageExtension(req.file.buffer);
+  if (!extension) {
+    res.status(415).json({
+      error: 'That file is not a PNG, JPEG, GIF, WebP or SVG image',
+      code: 'unsupported-media-type',
+    });
+    return;
+  }
   const userId = tenantOf(req);
-  const type = /\.svg$/i.test(req.file.filename) ? 'svg' : 'image';
-  const url = absoluteUrl(
-    req,
-    `/media/uploads/${encodeURIComponent(userId)}/${encodeURIComponent(req.file.filename)}`,
-  );
+  const file = `${Date.now()}-${randomUUID().slice(0, 8)}.${extension}`;
+  writeFileAtomic(path.join(pathsFor(req).uploadsDir, file), req.file.buffer);
+  recordAudit(db, {
+    tenantId: userId,
+    memberId: req.identity.member.id,
+    memberEmail: req.identity.member.email,
+    action: 'upload.create',
+    targetType: 'upload',
+    targetId: file,
+    detail: { bytes: req.file.size, type: extension },
+  });
   res.status(201).json({
-    id: req.file.filename,
-    name: req.file.originalname || req.file.filename,
-    type,
-    url,
+    id: file,
+    name: req.file.originalname || file,
+    type: extension === 'svg' ? 'svg' : 'image',
+    url: absoluteUrl(
+      req,
+      `/media/uploads/${encodeURIComponent(userId)}/${encodeURIComponent(file)}`,
+    ),
   });
 });
 
@@ -1098,6 +1335,14 @@ api.delete('/uploads/:id', (req, res) => {
     return;
   }
   unlinkSync(filePath);
+  recordAudit(db, {
+    tenantId: tenantOf(req),
+    memberId: req.identity.member.id,
+    memberEmail: req.identity.member.email,
+    action: 'upload.delete',
+    targetType: 'upload',
+    targetId: path.basename(req.params.id),
+  });
   res.status(204).end();
 });
 

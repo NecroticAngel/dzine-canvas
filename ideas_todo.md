@@ -194,11 +194,38 @@ with them, and creates its own designs. Decisions already taken: orgs with multi
   grant, revoke, both hijack paths, cross-tenant fetch/use/delete of a private template, protected
   thumbnails, and the on-disk layout. **ALL PASSED.**
 
+**Done — Phase 4, hardening**
+- **Uploads are judged by their bytes, not their name.** The old code kept the client's extension and
+  served the file back from our own origin, so "logo.png" could be HTML or a script-bearing SVG and
+  the browser was invited to run it. The extension is now derived from the content (PNG/JPEG/GIF/
+  WebP/SVG magic numbers) and multer holds the file in memory so nothing touches the disk before it
+  is checked. Anything else is 415, oversize is 413 with a message naming the limit.
+- **Uploaded SVGs are served inertly**: `Content-Security-Policy: default-src 'none'; sandbox` plus
+  `X-Content-Type-Options: nosniff`, so navigating straight to one cannot execute anything.
+- **Rate limits** exist at all now: reads, writes and uploads have separate per-minute budgets keyed
+  by tenant and address, configurable with `RATE_LIMIT_*_PER_MINUTE`, answering 429 with `Retry-After`
+  and `RateLimit-*` headers. Reads get their own budget so browsing a gallery can never be what stops
+  you saving. Note uploads draw on both the upload and write budgets.
+- **Audit trail**: an append-only `audit_log` records who did what (design create/update/delete,
+  template create/delete/use, grants and revokes, invites, tenants, uploads) with tenant, member,
+  action, target and a JSON detail. `GET /admin/audit?tenantId=&limit=` reads it. Audit writes never
+  fail the operation they describe.
+- **Backups**: `npm run backup` (`scripts/backup-storage.mjs`) snapshots the database with SQLite's
+  `VACUUM INTO` — consistent while the server keeps running, and no need to copy `-wal`/`-shm` — then
+  copies the whole storage root and writes a manifest. `--out` (point it at another volume in
+  production), `--keep N` to prune. Verified: 5/5 designs copied, `integrity_check` ok, and the live
+  database is deliberately not copied.
+- Verified with 26 checks on a dedicated instance with a throwaway storage root: HTML-named-PNG
+  rejected, SVG-named-TXT accepted and detected, oversize 413, SVG served with the CSP, audit entries
+  for six different actions, and both limiters tripping with the right headers while other traffic is
+  unaffected.
+
 **Next**
-1. **Phase 4 — hardening.** The Helm bug is fixed (see below); what is left is backups, rate limits,
-   an upload MIME allow-list, and an audit trail.
-2. Conflict handling: last-write-wins means two people on one design clobber each other.
-3. Tier 2 rulers/grid, Tier 5 export upgrades, or Tier 4 filling the permanently-empty panels.
+1. **Conflict handling.** Last-write-wins means two people on one design clobber each other, and it is
+   now the largest correctness gap left.
+2. Tier 2 rulers/grid, Tier 4 filling the permanently-empty panels, Tier 5 export upgrades,
+   Tier 6 QR polish, Tier 7 differentiators.
+3. Deferred cleanups at the bottom of §5.
 
 **Also known (not scheduled)**
 - **The upload queue is in memory only, so a page reload inside the 800 ms debounce silently loses
@@ -355,12 +382,13 @@ Test data in the library: `Portraitdfsfe` (used for testing),
 - [x] Verified: drag (0,400) → (700,850); Ctrl+Z restores (0,400) in **one** step with no
       intermediate stop; Ctrl+Shift+Z reapplies; Ctrl+Z steps back again.
 
-### Tier 3 — server-backed designs (big unlock)
-- [ ] `GET/POST /api/designs` and `GET/POST /api/uploads` **already exist but are unused** — the
-      library is localStorage-only. Migrate for: survives cache wipe, works in another browser,
-      real uploadable thumbnails.
-- [ ] Add a migration path from `necrozine-lidojs-library`.
-- [ ] Autosave (debounced) + dirty indicator — today a forgotten Save loses work.
+### Tier 3 — server-backed designs (big unlock) — ✅ DONE (Phases 1 and 2)
+- [x] The library is server-backed: `api/db.js` (`node:sqlite`) holds metadata, payloads stay files,
+      thumbnails are real image files, and writes are atomic.
+- [x] `necrozine-lidojs-library` migrates into the account on first load (`hydrateLibrary`), is
+      idempotent, discards the placeholder design once real ones exist, and never duplicates.
+- [x] Autosave (1.2 s after the last edit) plus a dirty flag and a real Save/Saving/Retrying label.
+- [x] The pending-op queue is persisted, so a reload inside the debounce can no longer drop a delete.
 
 ### Tier 4 — fill the permanently-empty panels
 - [ ] Add `/api/frames`, `/api/graphics`, `/api/images`, `/api/fonts` endpoints (or bundle
@@ -379,13 +407,14 @@ Test data in the library: `Portraitdfsfe` (used for testing),
 ### Tier 7 — differentiators
 - [ ] Magic resize (change canvas size, rescale/reflow layers) — Canva's killer feature.
 - [ ] Brand kit (saved palette + fonts).
-- [ ] "Save as template" → `POST /api/templates` exists; templates then appear in the Template tab.
+- [x] "Save as template" exists (Phase 3): `POST /templates` with a `sourceDesignId`, and a client's
+      templates are private to its tenant. An admin can publish a shared one.
 - [ ] Share links: read-only view via the existing `GET /api/designs/:id`.
 
 ### Deferred cleanups
 - [ ] `actions.addPage()` still creates **1640×924** pages regardless of the design's actual size.
-- [ ] Consider making the axios interceptor **honest** instead of converting every failed GET into
-      `{ data: [] }` with status 200 — it is the root cause of a whole family of bugs.
+- [x] The axios interceptor is honest now (Phase 1): it only rewrites our own relative-API failures,
+      requires an error `code`, always re-throws, and raises a blocking notice for 401/403.
 - [ ] `EditorHeader`'s theme toggle lost the old `@media (max-width: 900px) { display: none }` rule.
 - [ ] Remove the `NecroZine_Next` root from the workspace.
 - [ ] Consider theming `DrawContent`'s hard-coded geometry.

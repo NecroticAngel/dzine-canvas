@@ -281,17 +281,19 @@ owns, so a client can never mutate what we shared.
 Tenant admin vs member roles, `template_grants`, an admin surface to publish and share, and
 "use template → copy" end to end.
 
-### Phase 4 — hardening
-Backups of `db.sqlite` + files, rate limits (the 30 MB JSON body and 15 MB uploads are
-unauthenticated today), upload allow-list by MIME rather than the client-supplied extension, and an
-audit trail of who changed what.
+### Phase 4 — hardening — ✅ DONE (see Progress above)
+Uploads are validated by content and served inertly, there are per-tenant read/write/upload rate
+limits, an append-only audit trail with an admin route to read it, and `npm run backup` snapshots the
+database with `VACUUM INTO` while the server keeps running.
 
-Already fixed: the Helm chart no longer loses uploads on redeploy, and a per-tenant directory
-override that cannot vary by tenant is now a startup error.
+Also fixed: the Helm chart no longer loses uploads on redeploy, and a per-tenant directory override
+that cannot vary by tenant is a startup error.
 
-Still open from Phase 3 testing: **the pending-op queue is in memory only, so a reload inside the
-800 ms debounce silently loses the operation** — a delete is forgotten and the next hydrate brings
-the design back. Persist the queue, or flush it on `pagehide`.
+Also fixed: the pending-op queue is persisted, so a reload inside the 800 ms debounce no longer drops
+an operation (a lost delete used to come back on the next hydrate).
+
+Still open: conflict handling. Last-write-wins means two people editing one design clobber each
+other; a version check and a conflict path are the remaining correctness gap.
 
 ## 8. Open questions
 

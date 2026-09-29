@@ -94,6 +94,22 @@ CREATE TABLE IF NOT EXISTS template_grants (
   granted_at  INTEGER NOT NULL,
   PRIMARY KEY (template_id, tenant_id)
 );
+
+-- Who changed what. Append-only: nothing in the API updates or deletes rows in
+-- here, so it can be trusted as a record after the fact.
+CREATE TABLE IF NOT EXISTS audit_log (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  at          INTEGER NOT NULL,
+  tenant_id   TEXT,
+  member_id   TEXT,
+  member_email TEXT,
+  action      TEXT NOT NULL,
+  target_type TEXT,
+  target_id   TEXT,
+  detail      TEXT
+);
+CREATE INDEX IF NOT EXISTS audit_by_tenant ON audit_log(tenant_id, at DESC);
+CREATE INDEX IF NOT EXISTS audit_by_time ON audit_log(at DESC);
 `;
 
 /** Open (creating if needed) the metadata database under the storage root. */
@@ -455,3 +471,45 @@ export const listTemplateGrants = (db, templateId) =>
         ORDER BY g.granted_at`,
     )
     .all(templateId);
+
+/* --- Audit log -----------------------------------------------------------
+ * Append-only record of who changed what. Writes never throw: losing an audit
+ * line must not fail the operation the user actually asked for, so failures are
+ * reported to the console instead.
+ * ---------------------------------------------------------------------- */
+
+export const recordAudit = (db, entry) => {
+  try {
+    db
+      .prepare(
+        `INSERT INTO audit_log
+           (at, tenant_id, member_id, member_email, action, target_type, target_id, detail)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        Date.now(),
+        entry.tenantId ?? null,
+        entry.memberId ?? null,
+        entry.memberEmail ?? null,
+        entry.action,
+        entry.targetType ?? null,
+        entry.targetId ?? null,
+        entry.detail ? JSON.stringify(entry.detail).slice(0, 2000) : null,
+      );
+  } catch (error) {
+    console.warn('Could not write audit entry:', error.message);
+  }
+};
+
+export const listAudit = (db, { tenantId = null, limit = 200 } = {}) =>
+  db
+    .prepare(
+      `SELECT id, at, tenant_id AS tenantId, member_id AS memberId,
+              member_email AS memberEmail, action, target_type AS targetType,
+              target_id AS targetId, detail
+         FROM audit_log
+        WHERE (? IS NULL OR tenant_id = ?)
+        ORDER BY at DESC
+        LIMIT ?`,
+    )
+    .all(tenantId, tenantId, Math.min(Math.max(Number(limit) || 200, 1), 1000));
