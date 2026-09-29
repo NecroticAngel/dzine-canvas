@@ -292,8 +292,15 @@ that cannot vary by tenant is a startup error.
 Also fixed: the pending-op queue is persisted, so a reload inside the 800 ms debounce no longer drops
 an operation (a lost delete used to come back on the next hydrate).
 
-Still open: conflict handling. Last-write-wins means two people editing one design clobber each
-other; a version check and a conflict path are the remaining correctness gap.
+Still open: nothing structural. The remaining work is editor-facing (Tier 4/5/6/7 in
+`ideas_todo.md`) rather than multi-tenant wiring.
+
+**Conflict handling — DONE.** `designs.version` is bumped on every write and returned by the read
+endpoints. A save that quotes an older version is refused with `409 version-conflict` plus the
+current state, so two people on one design can no longer clobber each other silently. The client
+holds the conflicted design, shows it on the designs list with *Keep my version* / *Use their
+version*, and never overwrites without being told to. A client that sends no `baseVersion` is
+unaffected.
 
 ## 8. Open questions
 

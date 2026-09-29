@@ -13,9 +13,12 @@ import {
   type DesignSummary,
   getSyncStatus,
   hydrateLibrary,
+  listConflicts,
   listDesignSummaries,
   openDesignInLibrary,
   renameDesignInLibrary,
+  resolveConflictKeepMine,
+  resolveConflictUseTheirs,
   subscribeToSync,
   type SyncStatus,
 } from '../../../utils/designLibrary';
@@ -57,6 +60,7 @@ const formatUpdated = (ts: number) => {
 export const WelcomePage = ({ onOpenDesign }: WelcomePageProps) => {
   const { mode } = useAppTheme();
   const [designs, setDesigns] = useState<DesignSummary[]>([]);
+  const [conflicts, setConflicts] = useState<DesignSummary[]>([]);
   const [dialog, setDialog] = useState<RenameDialog | null>(null);
   const [showNewDesign, setShowNewDesign] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
@@ -68,7 +72,10 @@ export const WelcomePage = ({ onOpenDesign }: WelcomePageProps) => {
   const [templateError, setTemplateError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const refresh = () => setDesigns(listDesignSummaries());
+  const refresh = () => {
+    setDesigns(listDesignSummaries());
+    setConflicts(listConflicts());
+  };
 
   useEffect(() => subscribeToSync(setSyncStatus), []);
 
@@ -325,6 +332,101 @@ export const WelcomePage = ({ onOpenDesign }: WelcomePageProps) => {
             {session.member.email ?? session.member.name ?? 'signed in'}
             {session.isAdmin ? ' · admin' : ''}
           </p>
+        )}
+
+        {conflicts.length > 0 && (
+          <section
+            css={{
+              marginBottom: 32,
+              border: '1px solid #d64545',
+              borderRadius: 12,
+              padding: '14px 16px',
+              background: 'rgba(214,69,69,.07)',
+            }}
+          >
+            <h2
+              css={{
+                margin: '0 0 6px',
+                fontSize: 13,
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+                color: '#d64545',
+                fontWeight: 800,
+              }}
+            >
+              Changed somewhere else
+            </h2>
+            <p
+              css={{
+                margin: '0 0 12px',
+                fontSize: 13,
+                lineHeight: 1.5,
+                color: 'var(--app-text)',
+              }}
+            >
+              {conflicts.length === 1
+                ? 'This design was saved by someone else since you opened it, so your copy was not uploaded over theirs.'
+                : 'These designs were saved by someone else since you opened them, so your copies were not uploaded over theirs.'}{' '}
+              Nothing has been lost either way.
+            </p>
+            <div css={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {conflicts.map((design) => (
+                <div
+                  key={design.id}
+                  css={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <span css={{ fontWeight: 700, fontSize: 14, flexGrow: 1 }}>
+                    {design.name}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      resolveConflictKeepMine(design.id);
+                      refresh();
+                    }}
+                    css={{
+                      border: 'none',
+                      borderRadius: 8,
+                      padding: '7px 12px',
+                      fontWeight: 700,
+                      fontSize: 13,
+                      cursor: 'pointer',
+                      background: '#3d8eff',
+                      color: '#fff',
+                    }}
+                  >
+                    Keep my version
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void resolveConflictUseTheirs(design.id).then(() => {
+                        refresh();
+                        void fetchSession().then(setSession);
+                      });
+                    }}
+                    css={{
+                      border: '1px solid var(--app-border-strong)',
+                      borderRadius: 8,
+                      padding: '7px 12px',
+                      fontWeight: 700,
+                      fontSize: 13,
+                      cursor: 'pointer',
+                      background: 'transparent',
+                      color: 'inherit',
+                    }}
+                  >
+                    Use their version
+                  </button>
+                </div>
+              ))}
+            </div>
+          </section>
         )}
 
         {templates.length > 0 && (

@@ -1019,6 +1019,7 @@ api.post('/templates/:id/use', (req, res) => {
     updatedAt: now,
     bytes: Buffer.byteLength(serialized),
     thumbPath,
+    version: 1,
   });
   audit(req, {
     action: 'template.use',
@@ -1030,6 +1031,7 @@ api.post('/templates/:id/use', (req, res) => {
     id: designId,
     name,
     updatedAt: now,
+    version: 1,
     fromTemplateId: id,
     thumbUrl: thumbPath
       ? absoluteUrl(req, `/designs/${encodeURIComponent(designId)}/thumb`)
@@ -1116,6 +1118,7 @@ api.get('/designs', (req, res) => {
       id: row.id,
       name: row.name,
       updatedAt: row.updatedAt,
+      version: row.version,
       userId,
       thumbUrl: row.thumbPath
         ? absoluteUrl(req, `/designs/${encodeURIComponent(row.id)}/thumb`)
@@ -1138,6 +1141,7 @@ api.get('/designs/:id', (req, res) => {
     id: row.id,
     name: row.name,
     updatedAt: row.updatedAt,
+    version: row.version,
     pages,
   });
 });
@@ -1172,7 +1176,37 @@ api.put('/designs/:id', (req, res) => {
     return;
   }
   const existing = getDesign(db, userId, id);
+
+  // Optimistic concurrency. Two people editing one design used to be a silent
+  // clobber: whoever saved last won and the other's work simply vanished. A
+  // caller that knows which version it started from is told to look again
+  // instead. The read above and the write below are synchronous, so nothing can
+  // slip between them on a single-process server.
+  const baseVersion = Number(req.body?.baseVersion);
+  if (
+    existing &&
+    Number.isFinite(baseVersion) &&
+    baseVersion > 0 &&
+    baseVersion !== existing.version
+  ) {
+    res.status(409).json({
+      error: 'This design was changed somewhere else since you opened it',
+      code: 'version-conflict',
+      current: {
+        id: existing.id,
+        name: existing.name,
+        updatedAt: existing.updatedAt,
+        version: existing.version,
+        thumbUrl: existing.thumbPath
+          ? absoluteUrl(req, `/designs/${encodeURIComponent(existing.id)}/thumb`)
+          : null,
+      },
+    });
+    return;
+  }
+
   const now = Date.now();
+  const version = (existing?.version ?? 0) + 1;
   const name =
     typeof req.body.name === 'string' && req.body.name.trim()
       ? req.body.name.trim()
@@ -1193,17 +1227,19 @@ api.put('/designs/:id', (req, res) => {
     updatedAt: now,
     bytes: Buffer.byteLength(serialized),
     thumbPath,
+    version,
   });
   audit(req, {
     action: 'design.update',
     targetType: 'design',
     targetId: id,
-    detail: { name, bytes: Buffer.byteLength(serialized) },
+    detail: { name, bytes: Buffer.byteLength(serialized), version },
   });
   res.json({
     id,
     name,
     updatedAt: now,
+    version,
     thumbUrl: thumbPath
       ? absoluteUrl(req, `/designs/${encodeURIComponent(id)}/thumb`)
       : null,
@@ -1245,6 +1281,7 @@ api.post('/designs', (req, res) => {
     updatedAt: now,
     bytes: Buffer.byteLength(serialized),
     thumbPath,
+    version: 1,
   });
   audit(req, {
     action: 'design.create',
@@ -1256,6 +1293,7 @@ api.post('/designs', (req, res) => {
     id,
     name,
     updatedAt: now,
+    version: 1,
     thumbUrl: thumbPath
       ? absoluteUrl(req, `/designs/${encodeURIComponent(id)}/thumb`)
       : null,

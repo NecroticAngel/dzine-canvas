@@ -68,7 +68,10 @@ CREATE TABLE IF NOT EXISTS designs (
   updated_at INTEGER NOT NULL,
   bytes      INTEGER NOT NULL DEFAULT 0,
   thumb_path TEXT,
-  deleted_at INTEGER
+  deleted_at INTEGER,
+  -- Bumped on every write. A save that quotes an older version is based on a
+  -- copy somebody else has since changed, which used to be applied blindly.
+  version    INTEGER NOT NULL DEFAULT 1
 );
 CREATE INDEX IF NOT EXISTS designs_by_tenant
   ON designs(tenant_id, deleted_at, updated_at DESC);
@@ -119,6 +122,16 @@ export const openDatabase = (storageRoot) => {
   db.exec('PRAGMA journal_mode = WAL;');
   db.exec('PRAGMA foreign_keys = ON;');
   db.exec(SCHEMA);
+  // Databases created before the version column existed need it added; SQLite
+  // can only add one column at a time, and `IF NOT EXISTS` is not supported for
+  // a column, so ask what is already there.
+  const designColumns = db
+    .prepare('PRAGMA table_info(designs)')
+    .all()
+    .map((column) => column.name);
+  if (!designColumns.includes('version')) {
+    db.exec('ALTER TABLE designs ADD COLUMN version INTEGER NOT NULL DEFAULT 1');
+  }
   db
     .prepare(
       'INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING',
@@ -147,7 +160,7 @@ export const listDesigns = (db, tenantId) =>
   db
     .prepare(
       `SELECT id, name, created_at AS createdAt, updated_at AS updatedAt,
-              bytes, thumb_path AS thumbPath
+              bytes, thumb_path AS thumbPath, version
          FROM designs
         WHERE tenant_id = ? AND deleted_at IS NULL
         ORDER BY updated_at DESC`,
@@ -158,7 +171,7 @@ export const getDesign = (db, tenantId, id) =>
   db
     .prepare(
       `SELECT id, name, created_at AS createdAt, updated_at AS updatedAt,
-              bytes, thumb_path AS thumbPath
+              bytes, thumb_path AS thumbPath, version
          FROM designs
         WHERE tenant_id = ? AND id = ? AND deleted_at IS NULL`,
     )
@@ -168,13 +181,14 @@ export const upsertDesign = (db, record) => {
   db
     .prepare(
       `INSERT INTO designs
-         (id, tenant_id, owner_id, name, created_at, updated_at, bytes, thumb_path, deleted_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)
+         (id, tenant_id, owner_id, name, created_at, updated_at, bytes, thumb_path, deleted_at, version)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
        ON CONFLICT(id) DO UPDATE SET
          name       = excluded.name,
          updated_at = excluded.updated_at,
          bytes      = excluded.bytes,
          thumb_path = COALESCE(excluded.thumb_path, designs.thumb_path),
+         version    = excluded.version,
          deleted_at = NULL
        WHERE designs.tenant_id = excluded.tenant_id`,
     )
@@ -187,6 +201,7 @@ export const upsertDesign = (db, record) => {
       record.updatedAt,
       record.bytes ?? 0,
       record.thumbPath ?? null,
+      record.version ?? 1,
     );
 };
 

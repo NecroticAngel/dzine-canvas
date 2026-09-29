@@ -220,12 +220,30 @@ with them, and creates its own designs. Decisions already taken: orgs with multi
   for six different actions, and both limiters tripping with the right headers while other traffic is
   unaffected.
 
+**Done — conflicts, the last-write-wins gap**
+- Two people editing one design used to be a silent clobber: whoever saved last won and the other's
+  work simply vanished. `designs.version` is now bumped on every write, `GET /designs` and
+  `GET /designs/:id` return it, and a save that quotes an older version gets a **409
+  `version-conflict`** with the current state instead of overwriting. The read and the write are
+  synchronous, so nothing can slip between them on a single-process server.
+- A client that sends no `baseVersion` still works — that is also how "keep my version" resolves, and
+  it is what lets an old browser tab keep saving.
+- The library holds a conflicted design instead of retrying it forever, and flags it rather than
+  pretending to save: the Save button reads **Conflict** in red, and the designs list shows a
+  **"Changed somewhere else"** panel with *Keep my version* / *Use their version*. Nothing is lost
+  either way until the user chooses.
+- Verified: 12 checks over HTTP against a dedicated instance (version 1 on create, bumped on save,
+  stale save 409 with `code` and `current`, content of the winning save intact, unversioned save
+  allowed, version carried by a template copy, old client unaffected), then in the browser: a
+  competing save from the terminal produced a 409, the design was flagged, and the banner appeared
+  with both resolutions.
+- **Found and fixed in my own code while doing this:** the conflict flag was set on one `readStore()`
+  parse and written from another, so it was discarded and the banner never appeared. See gotcha 19.
+
 **Next**
-1. **Conflict handling.** Last-write-wins means two people on one design clobber each other, and it is
-   now the largest correctness gap left.
-2. Tier 2 rulers/grid, Tier 4 filling the permanently-empty panels, Tier 5 export upgrades,
+1. Tier 5 export upgrades, Tier 4 filling the permanently-empty panels, Tier 2 rulers/grid,
    Tier 6 QR polish, Tier 7 differentiators.
-3. Deferred cleanups at the bottom of §5.
+2. Deferred cleanups at the bottom of §5.
 
 **Also known (not scheduled)**
 - **The upload queue is in memory only, so a page reload inside the 800 ms debounce silently loses
@@ -303,6 +321,15 @@ before you trust an `Invoke-RestMethod` assertion.
     pending-op queue is in memory, so the reload drops it; the server still has the design, and the
     next hydrate brings it back. It looks like "delete is broken" and it is really "you were faster
     than the debounce". Wait for the Save label to settle before reloading.
+    *(Fixed: the queue is persisted now. Kept because the same shape of bug will recur.)*
+19. **`readStore()` parses a fresh copy on every call.** Mutating a design from one call and then
+    writing the result of a *different* `readStore()` silently discards the change — an object from
+    call A is not in the object from call B. It bit the conflict flag: the code set `conflict = true`
+    on one parse and wrote another, so the flag vanished and the UI never showed the banner. Read
+    the store **once**, find the design in that object, mutate, write.
+20. **A failed save proves nothing about the UI.** The 409 was visible in the console while the page
+    looked fine — the conflict flag never reached the store. Assert on what the screen shows, not on
+    the network log.
 
 Test data in the library: `Portraitdfsfe` (used for testing),
 `Square` (created while reproducing the table bug — safe to delete).

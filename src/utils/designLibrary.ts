@@ -13,6 +13,11 @@ export type DesignSummary = {
   thumbnail?: string;
   /** Server-hosted preview, used when there is no local data-URL preview. */
   thumbUrl?: string;
+  /** Server version this copy is based on. Sent with a save so the server can
+   * tell that we are about to overwrite somebody else's newer work. */
+  version?: number;
+  /** Set when a save was refused because the server has a newer version. */
+  conflict?: boolean;
 };
 
 export type SavedDesign = DesignSummary & {
@@ -154,12 +159,14 @@ export const listDesignSummaries = (): DesignSummary[] => {
     // `thumbUrl` has to survive this mapping: the grid falls back to it for
     // designs this browser never captured a preview for, which is every design
     // created somewhere else — or from a template.
-    .map(({ id, name, updatedAt, thumbnail, thumbUrl }) => ({
+    .map(({ id, name, updatedAt, thumbnail, thumbUrl, version, conflict }) => ({
       id,
       name,
       updatedAt,
       thumbnail,
       thumbUrl,
+      version,
+      conflict,
     }))
     .sort((a, b) => b.updatedAt - a.updatedAt);
 };
@@ -371,7 +378,7 @@ export const safeFileName = (name: string) =>
  * the first save would have nowhere to go.
  * ------------------------------------------------------------------------- */
 
-export type SyncStatus = 'idle' | 'pending' | 'saving' | 'error';
+export type SyncStatus = 'idle' | 'pending' | 'saving' | 'error' | 'conflict';
 
 const FLUSH_DELAY = 800;
 const RETRY_DELAY = 5000;
@@ -432,6 +439,57 @@ const setSyncStatus = (next: SyncStatus) => {
 
 export const getSyncStatus = () => syncStatus;
 
+/** Designs waiting on a decision about a conflict, newest first. */
+export const listConflicts = (): DesignSummary[] =>
+  listDesignSummaries().filter((design) => design.conflict);
+
+/**
+ * Keep the local copy. The next save is allowed to overwrite, because the user
+ * has been shown that somebody else's version exists and chose this one.
+ */
+export const resolveConflictKeepMine = (id: string): boolean => {
+  const store = readStore();
+  const design = store?.designs.find((item) => item.id === id);
+  if (!store || !design) return false;
+  delete design.conflict;
+  // No `version` means no base to compare against, which is what permits the
+  // overwrite. The server's response sets the version again afterwards.
+  design.version = undefined;
+  writeStore(store);
+  markDirty(id, 'upsert');
+  return true;
+};
+
+/** Discard the local copy and take the server's. */
+export const resolveConflictUseTheirs = async (id: string): Promise<boolean> => {
+  try {
+    const detail = await axios.get<{
+      name?: string;
+      pages?: unknown;
+      version?: number;
+    }>(`/designs/${encodeURIComponent(id)}`, { timeout: 15000 });
+    if (!isPages(detail.data?.pages)) return false;
+
+    const store = readStore();
+    const design = store?.designs.find((item) => item.id === id);
+    if (!store || !design) return false;
+
+    design.pages = clonePages(detail.data.pages);
+    design.name = detail.data.name ?? design.name;
+    design.version = detail.data.version;
+    design.updatedAt = Date.now();
+    delete design.conflict;
+    writeStore(store);
+
+    pending.delete(id);
+    writeQueue();
+    setSyncStatus(pending.size ? 'pending' : 'idle');
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 /** Subscribe to sync progress so a screen can show saving/retry state. */
 export const subscribeToSync = (listener: (status: SyncStatus) => void) => {
   statusListeners.add(listener);
@@ -487,19 +545,47 @@ const flushPending = async () => {
           pending.delete(id);
           continue;
         }
+        // A conflicted design waits for the user to decide. Retrying it would
+        // just overwrite the other person's work on the next attempt.
+        if (design.conflict) {
+          continue;
+        }
         // PUT is an upsert server-side, so this covers create and update.
-        await axios.put(`/designs/${encodeURIComponent(id)}`, {
-          name: design.name,
-          pages: design.pages,
-          thumbnail: design.thumbnail,
-        });
+        const response = await axios.put<{ version?: number }>(
+          `/designs/${encodeURIComponent(id)}`,
+          {
+            name: design.name,
+            pages: design.pages,
+            thumbnail: design.thumbnail,
+            baseVersion: design.version,
+          },
+        );
+        if (Number.isFinite(response.data?.version)) {
+          design.version = response.data.version;
+        }
         markDesignSynced(id);
       }
       pending.delete(id);
     } catch (error) {
-      // Deleting something the server never had is a success for our purposes.
       const status = axios.isAxiosError(error) ? error.response?.status : undefined;
+      // Deleting something the server never had is a success for our purposes.
       if (op === 'delete' && status === 404) {
+        pending.delete(id);
+        continue;
+      }
+      if (op === 'upsert' && status === 409) {
+        // Somebody else saved first. Park it and let the user choose; the local
+        // copy is kept so no work is lost either way.
+        //
+        // The store has to be read ONCE here: `readStore` parses a fresh copy
+        // each call, so mutating a design from one call and writing the result
+        // of another silently discarded the flag.
+        const store = readStore();
+        const design = store?.designs.find((item) => item.id === id);
+        if (store && design) {
+          design.conflict = true;
+          writeStore(store);
+        }
         pending.delete(id);
         continue;
       }
@@ -514,7 +600,12 @@ const flushPending = async () => {
     return;
   }
   writeQueue();
-  setSyncStatus(pending.size ? 'pending' : 'idle');
+  // A conflict is not a retry state: it needs the user, so it must not be
+  // reported as "Saving…" or the button would lie indefinitely.
+  const conflicted = (readStore()?.designs ?? []).some((design) => design.conflict);
+  setSyncStatus(
+    conflicted ? 'conflict' : pending.size ? 'pending' : 'idle',
+  );
 };
 
 /**
@@ -567,7 +658,9 @@ export const hydrateLibrary = (): Promise<void> => {
       if (local && local.updatedAt > remoteUpdatedAt) {
         // A local edit that never reached the server wins.
         designs.push(local);
-        markDirty(local.id, 'upsert');
+        // Unless it is conflicted: retrying that would overwrite the version
+        // the user has been told about but not yet decided on.
+        if (!local.conflict) markDirty(local.id, 'upsert');
         continue;
       }
 
@@ -579,6 +672,9 @@ export const hydrateLibrary = (): Promise<void> => {
           // The server is authoritative for its own previews: keeping a local
           // URL it no longer serves leaves the grid requesting a missing image.
           thumbUrl: summary.thumbUrl ?? undefined,
+          // Its version, however, is only ours to adopt while we are in step
+          // with it. A conflicted copy keeps the version the user must decide on.
+          version: local.conflict ? local.version : (summary.version ?? local.version),
           remote: true,
         });
         continue;
@@ -596,6 +692,7 @@ export const hydrateLibrary = (): Promise<void> => {
           updatedAt: remoteUpdatedAt || Date.now(),
           pages: clonePages(detail.data.pages),
           thumbUrl: summary.thumbUrl ?? undefined,
+          version: summary.version,
           remote: true,
         });
       } catch {
@@ -610,7 +707,9 @@ export const hydrateLibrary = (): Promise<void> => {
       if (design.placeholder) continue;
       if (queuedDeletes.has(design.id)) continue;
       designs.push(design);
-      markDirty(design.id, 'upsert');
+      // A design the server doesn't have yet, unless it is conflicted — in which
+      // case the server has a version we are waiting on a decision about.
+      if (!design.conflict) markDirty(design.id, 'upsert');
     }
 
     const previousActive = store?.activeId;

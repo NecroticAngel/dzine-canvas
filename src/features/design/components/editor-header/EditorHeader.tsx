@@ -102,21 +102,25 @@ const EditorHeaderForwardRef: ForwardRefRenderFunction<
   // `dirty` covers the gap between an edit and autosave persisting it, so the
   // button reads "Saving…" for the whole cycle instead of claiming to be done.
   const saveLabel =
-    syncStatus === 'error'
-      ? 'Retrying…'
-      : syncing || dirty
-        ? 'Saving…'
-        : saveState === 'saved'
-          ? 'Saved'
-          : 'Save';
+    syncStatus === 'conflict'
+      ? 'Conflict'
+      : syncStatus === 'error'
+        ? 'Retrying…'
+        : syncing || dirty
+          ? 'Saving…'
+          : saveState === 'saved'
+            ? 'Saved'
+            : 'Save';
   const saveBackground =
-    syncStatus === 'error'
-      ? '#b45309'
-      : syncing
-        ? '#2f7ae5'
-        : saveState === 'saved'
-          ? '#1f9d6a'
-          : '#3d8eff';
+    syncStatus === 'conflict'
+      ? '#d64545'
+      : syncStatus === 'error'
+        ? '#b45309'
+        : syncing
+          ? '#2f7ae5'
+          : saveState === 'saved'
+            ? '#1f9d6a'
+            : '#3d8eff';
 
   useEffect(() => {
     if (!exportOpen && !filesOpen) return;
