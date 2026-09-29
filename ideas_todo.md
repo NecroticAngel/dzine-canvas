@@ -241,8 +241,7 @@ with them, and creates its own designs. Decisions already taken: orgs with multi
   parse and written from another, so it was discarded and the banner never appeared. See gotcha 19.
 
 **Next**
-1. Tier 5 export upgrades, Tier 4 filling the permanently-empty panels, Tier 2 rulers/grid,
-   Tier 6 QR polish, Tier 7 differentiators.
+1. Tier 2 rulers/grid, Tier 6 QR polish, Tier 7 differentiators.
 2. Deferred cleanups at the bottom of §5.
 
 **Also known (not scheduled)**
@@ -327,9 +326,15 @@ before you trust an `Invoke-RestMethod` assertion.
     call A is not in the object from call B. It bit the conflict flag: the code set `conflict = true`
     on one parse and wrote another, so the flag vanished and the UI never showed the banner. Read
     the store **once**, find the design in that object, mutate, write.
-20. **A failed save proves nothing about the UI.** The 409 was visible in the console while the page
-    looked fine — the conflict flag never reached the store. Assert on what the screen shows, not on
-    the network log.
+21. **`cacheBust` breaks `blob:` URLs.** `html-to-image` appends a cache-busting query to every
+    image it fetches, and `blob:http://…/<uuid>?1790…` is not a valid URL — the capture fails with
+    `ERR_FILE_NOT_FOUND` and the preview is silently skipped. Inserting a graphic from the panel hit
+    exactly this, because it built the layer source with `URL.createObjectURL`. Use a `data:` URL
+    (exempt from cache busting, and no object URL to leak) or turn `cacheBust` off.
+22. **A font URL is not a font URL.** Google's keyless CSS endpoint answers with **woff2** for a
+    modern user agent and **TrueType** for an old one. The editor parses fonts to draw glyph paths
+    and has no woff2 decompressor, so a full Chrome UA in `scripts/seed-fonts.mjs` produced a
+    catalogue nothing could load. The user agent is part of the contract, not a detail.
 
 Test data in the library: `Portraitdfsfe` (used for testing),
 `Square` (created while reproducing the table bug — safe to delete).
@@ -417,9 +422,33 @@ Test data in the library: `Portraitdfsfe` (used for testing),
 - [x] Autosave (1.2 s after the last edit) plus a dirty flag and a real Save/Saving/Retrying label.
 - [x] The pending-op queue is persisted, so a reload inside the debounce can no longer drop a delete.
 
-### Tier 4 — fill the permanently-empty panels
-- [ ] Add `/api/frames`, `/api/graphics`, `/api/images`, `/api/fonts` endpoints (or bundle
-      curated local assets). Until then, Frame / Graphic / Image can never populate.
+### Tier 4 — fill the permanently-empty panels — ✅ DONE
+- The three panels called `/frames`, `/graphics` and `/images` against a service that was never part
+  of this app, so Frame, Graphic and Image could never populate. They are now backed by a real asset
+  library: artwork on disk under `{STORAGE_ROOT}/assets/<category>/`, metadata in an `assets` table,
+  adopted on boot the same way templates are. Dropping an SVG into a category directory publishes it.
+- `npm run seed:assets` generates **42 assets** from definitions rather than forty hand-written
+  files: 16 frames (each with its clip path), 18 graphics, 8 backgrounds. A frame's picker silhouette
+  and its clip mask come from the same path, so they cannot disagree.
+- `GET /frames`, `/graphics` and `/images` keep the shapes the panels already expected, so the
+  front-end change was small. `/assets` and `/assets/:id/content` serve the library directly.
+- Admins publish with `POST /admin/assets` and remove with `DELETE /admin/assets/:id`; both audited.
+- **Removed a relay that would have been an open proxy.** The Graphic panel fetched each SVG through
+  `/graphics/download?url=`, which would have had to fetch a caller-supplied URL. It now fetches the
+  asset's own content endpoint.
+- **Fixed the Unsplash credit.** The Image panel credited Unsplash for artwork this repo generates,
+  and `Photo` linked to a photographer profile that does not exist.
+- Verified in the browser: 16 frames, 18 graphics and 8 backgrounds all render from the API; a frame
+  inserts as a `FrameLayer` carrying its clip path (checked in the saved design), a graphic as an
+  `SvgLayer`, a background as an image layer.
+- **Also fixed: the font list was never loading.** `DesignPage` called Google's Webfonts API *from the
+  browser* with `process.env.FONT_API_KEY`, which Vite does not inline, so the request went out as
+  `key=undefined` and answered **403** — the 403 that sat in the console for the life of the project
+  looking like a stray stylesheet. Fonts now come from `GET /fonts`:
+  `npm run seed:fonts` builds a bundled catalogue of **22 families / 71 faces** from Google's
+  *keyless* CSS endpoint with real TrueType URLs; with `FONT_API_KEY` set server-side, `/fonts`
+  prefers Google's full catalogue and the key never reaches a browser. Verified: no requests to
+  `googleapis.com` remain, 22 families served, and a sampled file is a real TTF (`00010000`).
 
 ### Tier 5 — export upgrades — ✅ MOSTLY DONE
 - [x] **SVG** export (`toSvg`), alongside PNG/JPG/PDF/JSON.

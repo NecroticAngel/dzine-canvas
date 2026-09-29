@@ -19,11 +19,16 @@ export const FrameContent: FC<{ onClose: () => void }> = ({ onClose }) => {
   const [isLoading, setIsLoading] = useState(true);
   const { actions, query } = useEditor();
   useAsync(async () => {
-    const response = await axios.get<Frame[]>('/frames');
-    // A missing or unreachable endpoint can answer with HTML (SPA fallback)
-    // rather than JSON, so never trust the shape of what comes back.
-    setFrames(Array.isArray(response.data) ? response.data : []);
-    setIsLoading(false);
+    try {
+      const response = await axios.get<Frame[]>('/frames');
+      // A missing or unreachable endpoint can answer with HTML (SPA fallback)
+      // rather than JSON, so never trust the shape of what comes back.
+      setFrames(Array.isArray(response.data) ? response.data : []);
+    } catch {
+      setFrames([]);
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
   const addFrame = async (data: Frame) => {
     actions.addFrameLayer(data, data.clipPath);
@@ -140,6 +145,18 @@ export const FrameContent: FC<{ onClose: () => void }> = ({ onClose }) => {
           }}
         >
           {isLoading && <div>Loading...</div>}
+          {!isLoading && frames.length === 0 && (
+            <div
+              css={{
+                gridColumn: '1 / -1',
+                color: 'var(--app-text-muted)',
+                fontSize: 13,
+                lineHeight: 1.5,
+              }}
+            >
+              No frames are published yet.
+            </div>
+          )}
           {frames.map((item, index) => (
             <div
               key={index}

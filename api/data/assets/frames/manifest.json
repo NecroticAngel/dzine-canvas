@@ -1,0 +1,178 @@
+[
+  {
+    "file": "frame-rounded.svg",
+    "id": "frame-rounded",
+    "name": "Rounded",
+    "tags": [
+      "basic"
+    ],
+    "width": 1080,
+    "height": 1080,
+    "clipPath": "M 80 0 H 1000 A 80 80 0 0 1 1080 80 V 1000 A 80 80 0 0 1 1000 1080 H 80 A 80 80 0 0 1 0 1000 V 80 A 80 80 0 0 1 80 0 Z"
+  },
+  {
+    "file": "frame-square.svg",
+    "id": "frame-square",
+    "name": "Square",
+    "tags": [
+      "basic"
+    ],
+    "width": 1080,
+    "height": 1080,
+    "clipPath": "M 0 0 L 1080 0 L 1080 1080 L 0 1080 Z"
+  },
+  {
+    "file": "frame-circle.svg",
+    "id": "frame-circle",
+    "name": "Circle",
+    "tags": [
+      "basic"
+    ],
+    "width": 1080,
+    "height": 1080,
+    "clipPath": "M 540 0 A 540 540 0 1 1 539.9 0 Z"
+  },
+  {
+    "file": "frame-squircle.svg",
+    "id": "frame-squircle",
+    "name": "Squircle",
+    "tags": [
+      "basic"
+    ],
+    "width": 1080,
+    "height": 1080,
+    "clipPath": "M 320 0 H 760 A 320 320 0 0 1 1080 320 V 760 A 320 320 0 0 1 760 1080 H 320 A 320 320 0 0 1 0 760 V 320 A 320 320 0 0 1 320 0 Z"
+  },
+  {
+    "file": "frame-arch.svg",
+    "id": "frame-arch",
+    "name": "Arch",
+    "tags": [
+      "shaped"
+    ],
+    "width": 1080,
+    "height": 1080,
+    "clipPath": "M 0 1080 V 540 A 540 540 0 0 1 1080 540 V 1080 Z"
+  },
+  {
+    "file": "frame-hexagon.svg",
+    "id": "frame-hexagon",
+    "name": "Hexagon",
+    "tags": [
+      "shaped"
+    ],
+    "width": 1080,
+    "height": 1080,
+    "clipPath": "M 1080 540 L 810 1007.65 L 270 1007.65 L 0 540 L 270 72.35 L 810 72.35 Z"
+  },
+  {
+    "file": "frame-octagon.svg",
+    "id": "frame-octagon",
+    "name": "Octagon",
+    "tags": [
+      "shaped"
+    ],
+    "width": 1080,
+    "height": 1080,
+    "clipPath": "M 1038.89 746.65 L 746.65 1038.89 L 333.35 1038.89 L 41.11 746.65 L 41.11 333.35 L 333.35 41.11 L 746.65 41.11 L 1038.89 333.35 Z"
+  },
+  {
+    "file": "frame-pentagon.svg",
+    "id": "frame-pentagon",
+    "name": "Pentagon",
+    "tags": [
+      "shaped"
+    ],
+    "width": 1080,
+    "height": 1080,
+    "clipPath": "M 540 0 L 1053.57 373.13 L 857.4 976.87 L 222.6 976.87 L 26.43 373.13 Z"
+  },
+  {
+    "file": "frame-diamond.svg",
+    "id": "frame-diamond",
+    "name": "Diamond",
+    "tags": [
+      "shaped"
+    ],
+    "width": 1080,
+    "height": 1080,
+    "clipPath": "M 540 0 L 1080 540 L 540 1080 L 0 540 Z"
+  },
+  {
+    "file": "frame-portrait.svg",
+    "id": "frame-portrait",
+    "name": "Portrait",
+    "tags": [
+      "aspect"
+    ],
+    "width": 1080,
+    "height": 1350,
+    "clipPath": "M 48 0 H 1032 A 48 48 0 0 1 1080 48 V 1302 A 48 48 0 0 1 1032 1350 H 48 A 48 48 0 0 1 0 1302 V 48 A 48 48 0 0 1 48 0 Z"
+  },
+  {
+    "file": "frame-landscape.svg",
+    "id": "frame-landscape",
+    "name": "Landscape",
+    "tags": [
+      "aspect"
+    ],
+    "width": 1640,
+    "height": 924,
+    "clipPath": "M 48 0 H 1592 A 48 48 0 0 1 1640 48 V 876 A 48 48 0 0 1 1592 924 H 48 A 48 48 0 0 1 0 876 V 48 A 48 48 0 0 1 48 0 Z"
+  },
+  {
+    "file": "frame-polaroid.svg",
+    "id": "frame-polaroid",
+    "name": "Polaroid",
+    "tags": [
+      "photo"
+    ],
+    "width": 1080,
+    "height": 1296,
+    "clipPath": "M 36 24 H 1044 A 12 12 0 0 1 1056 36 V 1044 A 12 12 0 0 1 1044 1056 H 36 A 12 12 0 0 1 24 1044 V 36 A 12 12 0 0 1 36 24 Z"
+  },
+  {
+    "file": "frame-ticket.svg",
+    "id": "frame-ticket",
+    "name": "Ticket",
+    "tags": [
+      "photo"
+    ],
+    "width": 1080,
+    "height": 540,
+    "clipPath": "M 40 0 H 1040 A 40 40 0 0 1 1080 40 V 500 A 40 40 0 0 1 1040 540 H 40 A 40 40 0 0 1 0 500 V 40 A 40 40 0 0 1 40 0 Z"
+  },
+  {
+    "file": "frame-blob.svg",
+    "id": "frame-blob",
+    "name": "Blob",
+    "tags": [
+      "shaped"
+    ],
+    "width": 1080,
+    "height": 1080,
+    "clipPath": "M 812 168 C 962 268 1092 452 1052 620 C 1012 788 802 940 620 968 C 438 996 248 900 156 748 C 64 596 70 388 176 268 C 282 148 662 68 812 168 Z"
+  },
+  {
+    "file": "frame-half-round.svg",
+    "id": "frame-half-round",
+    "name": "Dome",
+    "tags": [
+      "shaped"
+    ],
+    "width": 1080,
+    "height": 1080,
+    "clipPath": "M 0 1080 H 1080 A 540 540 0 0 0 0 1080 Z"
+  },
+  {
+    "file": "frame-chevron.svg",
+    "id": "frame-chevron",
+    "name": "Chevron",
+    "tags": [
+      "shaped"
+    ],
+    "width": 1080,
+    "height": 1080,
+    "clipPath": "M 0 0 L 820 0 L 1080 540 L 820 1080 L 0 1080 L 260 540 Z"
+  }
+]

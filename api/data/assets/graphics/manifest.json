@@ -1,0 +1,184 @@
+[
+  {
+    "file": "arrow-right.svg",
+    "id": "arrow-right",
+    "name": "Arrow",
+    "tags": [
+      "arrows",
+      "basic"
+    ],
+    "width": 256,
+    "height": 256
+  },
+  {
+    "file": "arrow-curved.svg",
+    "id": "arrow-curved",
+    "name": "Curved arrow",
+    "tags": [
+      "arrows"
+    ],
+    "width": 256,
+    "height": 256
+  },
+  {
+    "file": "arrow-up.svg",
+    "id": "arrow-up",
+    "name": "Up arrow",
+    "tags": [
+      "arrows"
+    ],
+    "width": 256,
+    "height": 256
+  },
+  {
+    "file": "chevron-left.svg",
+    "id": "chevron-left",
+    "name": "Chevron",
+    "tags": [
+      "arrows"
+    ],
+    "width": 256,
+    "height": 256
+  },
+  {
+    "file": "star-5.svg",
+    "id": "star-5",
+    "name": "Star",
+    "tags": [
+      "shapes",
+      "badges"
+    ],
+    "width": 256,
+    "height": 256
+  },
+  {
+    "file": "star-6.svg",
+    "id": "star-6",
+    "name": "Six-point star",
+    "tags": [
+      "shapes"
+    ],
+    "width": 256,
+    "height": 256
+  },
+  {
+    "file": "sparkle.svg",
+    "id": "sparkle",
+    "name": "Sparkle",
+    "tags": [
+      "shapes"
+    ],
+    "width": 256,
+    "height": 256
+  },
+  {
+    "file": "heart.svg",
+    "id": "heart",
+    "name": "Heart",
+    "tags": [
+      "shapes"
+    ],
+    "width": 256,
+    "height": 256
+  },
+  {
+    "file": "speech-bubble.svg",
+    "id": "speech-bubble",
+    "name": "Speech bubble",
+    "tags": [
+      "callouts"
+    ],
+    "width": 256,
+    "height": 256
+  },
+  {
+    "file": "burst.svg",
+    "id": "burst",
+    "name": "Burst",
+    "tags": [
+      "badges"
+    ],
+    "width": 256,
+    "height": 256
+  },
+  {
+    "file": "badge-ribbon.svg",
+    "id": "badge-ribbon",
+    "name": "Ribbon",
+    "tags": [
+      "badges"
+    ],
+    "width": 256,
+    "height": 256
+  },
+  {
+    "file": "check-badge.svg",
+    "id": "check-badge",
+    "name": "Check",
+    "tags": [
+      "badges"
+    ],
+    "width": 256,
+    "height": 256
+  },
+  {
+    "file": "quote.svg",
+    "id": "quote",
+    "name": "Quotation marks",
+    "tags": [
+      "text"
+    ],
+    "width": 256,
+    "height": 256
+  },
+  {
+    "file": "underline.svg",
+    "id": "underline",
+    "name": "Underline",
+    "tags": [
+      "text"
+    ],
+    "width": 256,
+    "height": 256
+  },
+  {
+    "file": "scribble.svg",
+    "id": "scribble",
+    "name": "Scribble",
+    "tags": [
+      "text"
+    ],
+    "width": 256,
+    "height": 256
+  },
+  {
+    "file": "dots-grid.svg",
+    "id": "dots-grid",
+    "name": "Dots",
+    "tags": [
+      "patterns"
+    ],
+    "width": 256,
+    "height": 256
+  },
+  {
+    "file": "blob-mark.svg",
+    "id": "blob-mark",
+    "name": "Blob mark",
+    "tags": [
+      "shapes"
+    ],
+    "width": 256,
+    "height": 256
+  },
+  {
+    "file": "triangle.svg",
+    "id": "triangle",
+    "name": "Triangle",
+    "tags": [
+      "shapes"
+    ],
+    "width": 256,
+    "height": 256
+  }
+]

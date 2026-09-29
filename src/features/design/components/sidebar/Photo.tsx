@@ -3,10 +3,9 @@ import { type FC, type HTMLProps, memo, useState } from 'react';
 type Props = {
   image: string;
   name: string;
-  username: string;
 } & HTMLProps<HTMLDivElement>;
 
-export const Photo: FC<Props> = memo(({ image, name, username, ...props }) => {
+export const Photo: FC<Props> = memo(({ image, name, ...props }) => {
   const [isShow, setIsShow] = useState(false);
   return (
     <div
@@ -38,23 +37,7 @@ export const Photo: FC<Props> = memo(({ image, name, username, ...props }) => {
             'linear-gradient(0deg, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 0.2) 80%, rgba(0, 0, 0, 0) 100%)',
         }}
       >
-        Photo by
-        <a
-          css={{ color: '#3d8eff' }}
-          href={`https://unsplash.com/@${username}?utm_source=dzine-canvas&utm_medium=referral`}
-          rel="noreferrer"
-          target="_blank"
-        >
-          {name}
-        </a>
-        on
-        <a
-          href={`https://unsplash.com/@${username}?utm_source=dzine-canvas&utm_medium=referral`}
-          rel="noreferrer"
-          target="_blank"
-        >
-          unsplash
-        </a>
+        {name}
       </p>
     </div>
   );

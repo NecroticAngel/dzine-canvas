@@ -111,8 +111,23 @@ CREATE TABLE IF NOT EXISTS audit_log (
   target_id   TEXT,
   detail      TEXT
 );
-CREATE INDEX IF NOT EXISTS audit_by_tenant ON audit_log(tenant_id, at DESC);
-CREATE INDEX IF NOT EXISTS audit_by_time ON audit_log(at DESC);
+-- The shared asset library behind the Frames, Graphic and Image panels.
+-- Global, not per tenant: this is our catalogue, like the templates we publish.
+CREATE TABLE IF NOT EXISTS assets (
+  id         TEXT PRIMARY KEY,
+  category   TEXT NOT NULL,
+  name       TEXT NOT NULL,
+  tags       TEXT,
+  kind       TEXT NOT NULL DEFAULT 'svg',
+  width      REAL,
+  height     REAL,
+  -- Frames only: the path used as the clip mask, in the image's own space.
+  clip_path  TEXT,
+  bytes      INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  created_by TEXT
+);
+CREATE INDEX IF NOT EXISTS assets_by_category ON assets(category, name COLLATE NOCASE);
 `;
 
 /** Open (creating if needed) the metadata database under the storage root. */
@@ -486,6 +501,85 @@ export const listTemplateGrants = (db, templateId) =>
         ORDER BY g.granted_at`,
     )
     .all(templateId);
+
+/* --- Assets -------------------------------------------------------------
+ * The shared library the Frames, Graphic and Image panels read. Metadata lives
+ * here; the artwork stays an SVG file beside the others, adopted from the
+ * directory the same way templates are.
+ * --------------------------------------------------------------------- */
+
+const ASSET_COLUMNS = `id, category, name, tags, kind, width, height,
+                       clip_path AS clipPath, bytes, created_at AS createdAt`;
+
+export const upsertAsset = (db, record) => {
+  db
+    .prepare(
+      `INSERT INTO assets
+         (id, category, name, tags, kind, width, height, clip_path, bytes, created_at, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         category   = excluded.category,
+         name       = excluded.name,
+         tags       = excluded.tags,
+         kind       = excluded.kind,
+         width      = excluded.width,
+         height     = excluded.height,
+         clip_path  = excluded.clip_path,
+         bytes      = excluded.bytes`,
+    )
+    .run(
+      record.id,
+      record.category,
+      record.name,
+      Array.isArray(record.tags) ? record.tags.join(',') : (record.tags ?? null),
+      record.kind ?? 'svg',
+      record.width ?? null,
+      record.height ?? null,
+      record.clipPath ?? null,
+      record.bytes ?? 0,
+      record.createdAt ?? Date.now(),
+      record.createdBy ?? null,
+    );
+  return getAsset(db, record.id);
+};
+
+export const getAsset = (db, id) =>
+  db.prepare(`SELECT ${ASSET_COLUMNS} FROM assets WHERE id = ?`).get(id) ?? null;
+
+/** `q` matches the name or any tag, case-insensitively. */
+export const listAssets = (db, { category = null, q = null, limit = 200, offset = 0 } = {}) =>
+  db
+    .prepare(
+      `SELECT ${ASSET_COLUMNS} FROM assets
+        WHERE (? IS NULL OR category = ?)
+          AND (? IS NULL OR lower(name) LIKE ? OR lower(tags) LIKE ?)
+        ORDER BY name COLLATE NOCASE
+        LIMIT ? OFFSET ?`,
+    )
+    .all(
+      category,
+      category,
+      q,
+      `%${(q ?? '').toLowerCase()}%`,
+      `%${(q ?? '').toLowerCase()}%`,
+      Math.min(Math.max(Number(limit) || 200, 1), 500),
+      Math.max(Number(offset) || 0, 0),
+    );
+
+export const countAssets = (db, category = null) =>
+  db
+    .prepare('SELECT count(*) AS c FROM assets WHERE (? IS NULL OR category = ?)')
+    .get(category, category).c;
+
+export const deleteAsset = (db, id) => {
+  const row = getAsset(db, id);
+  if (!row) return null;
+  db.prepare('DELETE FROM assets WHERE id = ?').run(id);
+  return row;
+};
+
+export const knownAssetIds = (db) =>
+  new Set(db.prepare('SELECT id FROM assets').all().map((row) => row.id));
 
 /* --- Audit log -----------------------------------------------------------
  * Append-only record of who changed what. Writes never throw: losing an audit

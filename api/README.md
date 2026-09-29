@@ -58,6 +58,8 @@ api/public/                       static thumbs (NECROZINE_PUBLIC_DIR)
 | `NECROZINE_PUBLIC_DIR` / `PUBLIC_DIR` | `api/public` | Static files (`/thumbs/…`) |
 | `NECROZINE_DESIGNS_DIR` / `DESIGNS_DIR` | `{STORAGE_ROOT}/users/{userId}/designs` | Tenant design JSON |
 | `NECROZINE_UPLOADS_DIR` / `UPLOADS_DIR` | `{STORAGE_ROOT}/users/{userId}/uploads` | Tenant uploads |
+| `NECROZINE_ASSETS_DIR` / `ASSETS_DIR` | `{STORAGE_ROOT}/assets` | Shared frames, graphics and backgrounds |
+| `FONT_API_KEY` | unset | Optional; `GET /fonts` prefers Google's catalogue when set |
 | `NECROZINE_DEFAULT_USER_ID` | `default` | Tenant used before identity resolves |
 
 Absolute paths win. Relative paths resolve from the `canva-clone/` project root.

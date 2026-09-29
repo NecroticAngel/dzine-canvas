@@ -89,10 +89,13 @@ export const GraphicContent: FC<{ onClose: () => void }> = ({ onClose }) => {
     thumb: string;
     downloadUrl: string;
   }) => {
-    const res = await axios.get(
-      `/graphics/download?url=${window.encodeURIComponent(item.downloadUrl)}`,
-    );
-    const file = res.data.file;
+    // The artwork is ours, so it is fetched straight from its own URL. This used
+    // to go through a `/graphics/download?url=` endpoint, which would have had
+    // to fetch a caller-supplied URL — an open relay for anyone who found it.
+    const res = await axios.get<string>(item.downloadUrl, {
+      responseType: 'text',
+    });
+    const file = res.data;
     const parser = new DOMParser();
     const ele = parser.parseFromString(file, 'text/xml')
       .documentElement as unknown as SVGElement;
@@ -102,10 +105,12 @@ export const GraphicContent: FC<{ onClose: () => void }> = ({ onClose }) => {
     const height =
       viewBox.length === 4 ? +viewBox[3] : +(ele.getAttribute('height') || 100);
 
-    const svgBlob = new Blob([ele.outerHTML], {
-      type: 'image/svg+xml;charset=utf-8',
-    });
-    const svgUrl = URL.createObjectURL(svgBlob);
+    // A data URL rather than an object URL. The thumbnail capture appends a
+    // cache-busting query to every image it fetches, and `blob:...?123` is not a
+    // valid URL — so inserting a graphic from here broke the preview capture
+    // with ERR_FILE_NOT_FOUND. Data URLs are exempt from that, and this also
+    // stops leaking an object URL on every insert.
+    const svgUrl = `data:image/svg+xml;charset=utf-8,${window.encodeURIComponent(ele.outerHTML)}`;
     actions.addSvgLayer(svgUrl, { width, height }, ele);
     if (isMobile) {
       onClose();

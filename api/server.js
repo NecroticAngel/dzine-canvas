@@ -8,6 +8,7 @@ import {
   readdirSync,
   readFileSync,
   renameSync,
+  statSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
@@ -21,12 +22,15 @@ import {
   storageRootIsEphemeral,
 } from './storagePaths.js';
 import {
+  countAssets,
   createInvite,
+  deleteAsset,
   deleteDesign,
   deleteInvite,
   deleteTemplate,
   designOwner,
   ensureTenant,
+  getAsset,
   getDesign,
   getTemplate,
   getTenant,
@@ -34,6 +38,7 @@ import {
   isTemplateVisible,
   knownDesignIds,
   listAllTemplates,
+  listAssets,
   listAudit,
   listDesigns,
   listInvites,
@@ -45,6 +50,7 @@ import {
   openDatabase,
   recordAudit,
   revokeTemplateGrant,
+  upsertAsset,
   upsertDesign,
   upsertTemplate,
 } from './db.js';
@@ -1382,6 +1388,389 @@ api.delete('/uploads/:id', (req, res) => {
     targetId: path.basename(req.params.id),
   });
   res.status(204).end();
+});
+
+/* --- Shared asset library ------------------------------------------------
+ * The Frames, Graphic and Image panels used to call `/frames`, `/graphics` and
+ * `/images` against a service that was never part of this app, so they could
+ * never populate. Those paths are now backed by a real catalogue: artwork on
+ * disk, metadata in the database, adopted on boot like templates.
+ * --------------------------------------------------------------------- */
+
+const ASSET_CATEGORIES = new Set(['frames', 'graphics', 'images']);
+const SEED_ASSETS_DIR = path.join(__dirname, 'data', 'assets');
+
+const assetDir = (paths, category) => path.join(paths.assetsDir, category);
+
+/** Tags are stored comma-joined; callers want a list. */
+const splitTags = (tags) =>
+  typeof tags === 'string' && tags ? tags.split(',').filter(Boolean) : [];
+
+/**
+ * Copy the packaged artwork into the storage root the first time.
+ *
+ * Only files that are not already there, so an edited or added asset in the
+ * storage root is never overwritten by a redeploy.
+ */
+const seedAssets = (paths) => {
+  for (const category of ASSET_CATEGORIES) {
+    const source = path.join(SEED_ASSETS_DIR, category);
+    if (!existsSync(source)) continue;
+    const destination = assetDir(paths, category);
+    mkdirSync(destination, { recursive: true });
+    for (const file of readdirSync(source)) {
+      const target = path.join(destination, file);
+      if (!existsSync(target)) copyFileSync(path.join(source, file), target);
+    }
+  }
+};
+
+/** Metadata for a category, keyed by file name, from its manifest. */
+const readAssetManifest = (dir) => {
+  const manifestFile = path.join(dir, 'manifest.json');
+  if (!existsSync(manifestFile)) return new Map();
+  try {
+    const parsed = JSON.parse(readFileSync(manifestFile, 'utf8'));
+    if (!Array.isArray(parsed)) return new Map();
+    return new Map(
+      parsed
+        .filter((entry) => entry && typeof entry.file === 'string')
+        .map((entry) => [entry.file, entry]),
+    );
+  } catch (error) {
+    console.warn(`Ignoring unreadable asset manifest in ${dir}:`, error.message);
+    return new Map();
+  }
+};
+
+/**
+ * Index the artwork in a category that the database doesn't know about yet.
+ *
+ * A manifest entry, when there is one, carries the metadata the file itself
+ * cannot: the frame clip path, and dimensions for artwork whose units are not
+ * pixels. Anything without an entry is still adopted, named from its file, so
+ * dropping a new SVG into the directory is all it takes to publish it.
+ */
+const adoptOrphanAssets = (db, dir, category) => {
+  if (!existsSync(dir)) return 0;
+  const manifest = readAssetManifest(dir);
+  const files = readdirSync(dir).filter((name) => /\.(svg|png|jpe?g|webp)$/i.test(name));
+  let changed = 0;
+
+  for (const file of files) {
+    const id = file.replace(/\.[^.]+$/, '');
+    const full = path.join(dir, file);
+    const existing = getAsset(db, id);
+    const entry = manifest.get(file);
+
+    // Repair a row whose metadata changed in the manifest, and adopt new files.
+    const wanted = {
+      id,
+      category,
+      name: entry?.name ?? existing?.name ?? id.replace(/[-_]+/g, ' '),
+      tags: entry?.tags ?? existing?.tags ?? [],
+      kind: path.extname(file).slice(1).toLowerCase(),
+      width: entry?.width ?? existing?.width ?? null,
+      height: entry?.height ?? existing?.height ?? null,
+      clipPath: entry?.clipPath ?? existing?.clipPath ?? null,
+      bytes: statSync(full).size,
+      createdAt: existing?.createdAt ?? Date.now(),
+    };
+
+    if (existing) {
+      const unchanged =
+        existing.category === wanted.category &&
+        existing.name === wanted.name &&
+        existing.tags === wanted.tags &&
+        existing.kind === wanted.kind &&
+        existing.width === wanted.width &&
+        existing.height === wanted.height &&
+        existing.clipPath === wanted.clipPath &&
+        existing.bytes === wanted.bytes;
+      if (unchanged) continue;
+    }
+    upsertAsset(db, wanted);
+    changed += 1;
+  }
+  return changed;
+};
+
+const adoptAllAssets = (db, paths) => {
+  let changed = 0;
+  for (const category of ASSET_CATEGORIES) {
+    changed += adoptOrphanAssets(db, assetDir(paths, category), category);
+  }
+  return changed;
+};
+
+/** The file behind an asset. Assets are ours, so the name is not user input. */
+const assetFilePath = (paths, asset) =>
+  path.join(assetDir(paths, asset.category), `${asset.id}.${asset.kind}`);
+
+/**
+ * Boot: put the packaged artwork in place and index it, so the panels have
+ * something to show before the first request.
+ */
+seedAssets(bootPaths);
+adoptAllAssets(db, bootPaths);
+
+const assetUrl = (req, id) =>
+  absoluteUrl(req, `/assets/${encodeURIComponent(id)}/content`);
+
+/**
+ * The shape the Frames panel expects. It wants a preview image and the clip
+ * path, both of which come from the same artwork, so they cannot disagree.
+ */
+api.get('/frames', (req, res) => {
+  const paths = pathsFor(req);
+  adoptAllAssets(db, paths);
+  res.json(
+    listAssets(db, { category: 'frames', limit: 500 }).map((asset) => ({
+      id: asset.id,
+      name: asset.name,
+      img: assetUrl(req, asset.id),
+      clipPath: asset.clipPath,
+      width: asset.width,
+      height: asset.height,
+      tags: splitTags(asset.tags),
+    })),
+  );
+});
+
+/**
+ * The Graphic panel. It used to fetch each SVG through a `/graphics/download`
+ * proxy, which would have had to fetch a caller-supplied URL — an open relay.
+ * The artwork is ours, so the URL is simply the asset's own content endpoint.
+ */
+api.get('/graphics', (req, res) => {
+  const paths = pathsFor(req);
+  adoptAllAssets(db, paths);
+  res.json(
+    listAssets(db, {
+      category: 'graphics',
+      q: req.query.q ? String(req.query.q) : null,
+      limit: req.query.limit,
+      offset: req.query.offset,
+    }).map((asset) => ({
+      id: asset.id,
+      name: asset.name,
+      tags: splitTags(asset.tags),
+      thumb: assetUrl(req, asset.id),
+      downloadUrl: assetUrl(req, asset.id),
+      width: asset.width,
+      height: asset.height,
+    })),
+  );
+});
+
+/** The Image panel: backgrounds and textures rather than stock photography. */
+api.get('/images', (req, res) => {
+  const paths = pathsFor(req);
+  adoptAllAssets(db, paths);
+  res.json(
+    listAssets(db, {
+      category: 'images',
+      q: req.query.q ? String(req.query.q) : null,
+      limit: req.query.limit,
+      offset: Number(req.query.offset) || 0,
+    }).map((asset) => ({
+      id: asset.id,
+      name: asset.name,
+      username: 'D-Zine Canvas',
+      image: assetUrl(req, asset.id),
+      thumb: assetUrl(req, asset.id),
+      width: asset.width,
+      height: asset.height,
+    })),
+  );
+});
+
+/** Everything, for a caller that wants the library rather than one panel. */
+api.get('/assets', (req, res) => {
+  const paths = pathsFor(req);
+  adoptAllAssets(db, paths);
+  const category =
+    typeof req.query.category === 'string' && ASSET_CATEGORIES.has(req.query.category)
+      ? req.query.category
+      : null;
+  res.json({
+    total: countAssets(db, category),
+    assets: listAssets(db, {
+      category,
+      q: req.query.q ? String(req.query.q) : null,
+      limit: req.query.limit,
+      offset: req.query.offset,
+    }).map((asset) => ({
+      id: asset.id,
+      category: asset.category,
+      name: asset.name,
+      tags: splitTags(asset.tags),
+      width: asset.width,
+      height: asset.height,
+      clipPath: asset.clipPath,
+      url: assetUrl(req, asset.id),
+    })),
+  });
+});
+
+api.get('/assets/:id/content', (req, res) => {
+  const asset = getAsset(db, safeId(req.params.id));
+  const filePath = asset ? assetFilePath(pathsFor(req), asset) : null;
+  if (!asset || !filePath || !existsSync(filePath)) {
+    res.status(404).json({ error: 'Asset not found' });
+    return;
+  }
+  // Artwork is ours rather than uploaded, but it is still served from our origin
+  // and may be an SVG, so it gets the same restrictive policy as an upload.
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.type(UPLOAD_MIME[asset.kind] ?? 'application/octet-stream');
+  res.sendFile(filePath);
+});
+
+/** Admin: publish artwork, or remove something from the library. */
+api.post('/admin/assets', requireAdmin, uploadLimit, uploadSingle, (req, res) => {
+  const category = String(req.body?.category ?? '');
+  if (!ASSET_CATEGORIES.has(category)) {
+    res.status(400).json({ error: `category must be one of ${[...ASSET_CATEGORIES].join(', ')}` });
+    return;
+  }
+  if (!req.file) {
+    res.status(400).json({ error: 'Expected multipart field "file"' });
+    return;
+  }
+  const extension = detectImageExtension(req.file.buffer);
+  if (!extension) {
+    res.status(415).json({
+      error: 'That file is not a PNG, JPEG, GIF, WebP or SVG image',
+      code: 'unsupported-media-type',
+    });
+    return;
+  }
+  const id = safeId(req.body?.id, `${category}-${randomUUID().slice(0, 8)}`);
+  const dir = assetDir(pathsFor(req), category);
+  mkdirSync(dir, { recursive: true });
+  writeFileAtomic(path.join(dir, `${id}.${extension}`), req.file.buffer);
+
+  const asset = upsertAsset(db, {
+    id,
+    category,
+    name: typeof req.body?.name === 'string' && req.body.name.trim() ? req.body.name.trim() : id,
+    tags: String(req.body?.tags ?? '').split(',').map((tag) => tag.trim()).filter(Boolean),
+    kind: extension,
+    width: Number(req.body?.width) || null,
+    height: Number(req.body?.height) || null,
+    clipPath: typeof req.body?.clipPath === 'string' ? req.body.clipPath : null,
+    bytes: req.file.size,
+    createdBy: req.identity.member.id,
+  });
+  audit(req, {
+    action: 'asset.create',
+    targetType: 'asset',
+    targetId: id,
+    detail: { category, kind: extension, bytes: req.file.size },
+  });
+  res.status(201).json({ ...asset, url: assetUrl(req, id) });
+});
+
+api.delete('/admin/assets/:id', requireAdmin, (req, res) => {
+  const id = safeId(req.params.id);
+  const asset = deleteAsset(db, id);
+  if (!asset) {
+    res.status(404).json({ error: 'Asset not found' });
+    return;
+  }
+  const filePath = assetFilePath(pathsFor(req), asset);
+  if (existsSync(filePath)) unlinkSync(filePath);
+  audit(req, {
+    action: 'asset.delete',
+    targetType: 'asset',
+    targetId: id,
+    detail: { category: asset.category },
+  });
+  res.status(204).end();
+});
+
+/* --- Fonts ---------------------------------------------------------------
+ * Served from the API rather than fetched by the browser, for two reasons: an
+ * API key has no business in a client bundle, and without one Google answers
+ * 403 — which is what quietly left the font list empty. This endpoint prefers
+ * Google's catalogue when a key is configured and otherwise serves the file
+ * that `scripts/seed-fonts.mjs` builds from Google's keyless CSS endpoint, so
+ * fonts work with no key at all.
+ * --------------------------------------------------------------------- */
+
+const SEED_FONTS_FILE = path.join(__dirname, 'data', 'fonts.json');
+const FONT_CACHE_MS = 12 * 60 * 60 * 1000;
+let fontCache = { at: 0, payload: null };
+
+/** Google's catalogue, in the shape the editor's FontData expects. */
+const toFontData = (item) => {
+  const files = item?.files ?? {};
+  const variants = Array.isArray(item?.variants) ? item.variants : [];
+  const hasItalic = variants.includes('italic');
+  const fonts = [];
+  const add = (style, url) => {
+    if (url) fonts.push(style ? { style, urls: [url] } : { urls: [url] });
+  };
+  add(undefined, files.regular ?? files['400']);
+  if (hasItalic) add('Italic', files.italic ?? files['400italic']);
+  const bold = files['600'] ?? files['700'];
+  if (bold) add('Bold', bold);
+  if (hasItalic) add('Bold_Italic', files['600italic'] ?? files['700italic']);
+  return { name: String(item?.family ?? ''), fonts };
+};
+
+/** The packaged catalogue, or an operator's override in the storage root. */
+const bundledFonts = () => {
+  const override = path.join(bootPaths.storageRoot, 'fonts.json');
+  const file = existsSync(override) ? override : SEED_FONTS_FILE;
+  try {
+    const parsed = JSON.parse(readFileSync(file, 'utf8'));
+    const fonts = Array.isArray(parsed?.fonts) ? parsed.fonts : [];
+    return { source: file === override ? 'storage-root' : 'bundled', fonts };
+  } catch (error) {
+    console.warn(`Could not read the font catalogue at ${file}:`, error.message);
+    return { source: 'none', fonts: [] };
+  }
+};
+
+api.get('/fonts', async (_req, res) => {
+  if (fontCache.payload && Date.now() - fontCache.at < FONT_CACHE_MS) {
+    res.json(fontCache.payload);
+    return;
+  }
+
+  const apiKey = process.env.FONT_API_KEY || process.env.GOOGLE_FONT_API_KEY;
+  if (apiKey) {
+    try {
+      const response = await fetch(
+        `https://www.googleapis.com/webfonts/v1/webfonts?key=${encodeURIComponent(apiKey)}&sort=popularity`,
+      );
+      if (response.ok) {
+        const data = await response.json();
+        const fonts = (Array.isArray(data?.items) ? data.items : [])
+          .map(toFontData)
+          .filter((font) => font.name && font.fonts.length);
+        if (fonts.length) {
+          fontCache = { at: Date.now(), payload: { source: 'google-webfonts-api', fonts } };
+          res.json(fontCache.payload);
+          return;
+        }
+      } else {
+        console.warn(
+          `Google Webfonts API answered ${response.status}; serving the bundled catalogue.`,
+        );
+      }
+    } catch (error) {
+      console.warn('Could not reach the Google Webfonts API:', error.message);
+    }
+  }
+
+  const payload = bundledFonts();
+  fontCache = { at: Date.now(), payload };
+  res.json(payload);
 });
 
 app.use(`${BASE_PATH}/api`, api);

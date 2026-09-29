@@ -94,6 +94,13 @@ export const getStoragePaths = (userId = DEFAULT_USER) => {
     path.join(__dirname, 'public'),
   );
 
+  // The shared asset library (frames, graphics, background images). Global,
+  // like templates: it is our catalogue, not a tenant's.
+  const assetsDir = resolvePath(
+    process.env.NECROZINE_ASSETS_DIR || process.env.ASSETS_DIR,
+    path.join(STORAGE_ROOT, 'assets'),
+  );
+
   const designsTemplate = DESIGNS_TEMPLATE;
   const uploadsTemplate = UPLOADS_TEMPLATE;
 
@@ -124,6 +131,7 @@ export const getStoragePaths = (userId = DEFAULT_USER) => {
     uploadsDir,
     thumbsDir,
     tenantTemplatesDir,
+    assetsDir,
   ]) {
     mkdirSync(dir, { recursive: true });
   }
@@ -138,6 +146,7 @@ export const getStoragePaths = (userId = DEFAULT_USER) => {
     designsDir,
     uploadsDir,
     thumbsDir,
+    assetsDir,
   };
 };
 

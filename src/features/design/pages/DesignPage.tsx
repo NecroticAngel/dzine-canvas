@@ -6,19 +6,6 @@ import { useEffect, useState } from 'react';
 import { DzineCanvasEditor } from '../components';
 import { WelcomePage } from './WelcomePage';
 
-type FontVariant =
-  | 'regular'
-  | 'italic'
-  | '100'
-  | '200'
-  | '300'
-  | '400'
-  | '500'
-  | '600'
-  | '700'
-  | '800'
-  | '900';
-
 export const DesignPage = () => {
   const [view, setView] = useState<'welcome' | 'editor'>('welcome');
   const [editorKey, setEditorKey] = useState(0);
@@ -26,58 +13,20 @@ export const DesignPage = () => {
 
   useEffect(() => {
     const getFont = async () => {
+      // The catalogue comes from our own API. It used to be fetched straight
+      // from Google with `process.env.FONT_API_KEY`, which Vite does not inline,
+      // so the request went out as `key=undefined` and answered 403 — leaving
+      // the font list empty and a permanent 403 in the console.
       const data = await axios
-        .get<{
-          items: {
-            family: string;
-            variants: FontVariant[];
-            files: Record<FontVariant, string>;
-          }[];
-        }>(
-          `https://www.googleapis.com/webfonts/v1/webfonts?key=${process.env.FONT_API_KEY}`,
-        )
-        .catch(() => ({ data: { items: [] } }));
+        .get<{ fonts?: FontData[] }>('/fonts')
+        .catch(() => ({ data: { fonts: [] } }));
       // The shared axios interceptor rewrites every failed GET into `{ data: [] }`,
       // so a rejection never reaches the `.catch` above and the payload can be an
       // array where an object was expected. Never trust the shape.
-      const items = Array.isArray(data?.data?.items) ? data.data.items : [];
-      const res: FontData[] = items.map((i) => {
-        const fonts = Object.entries(i.files).reduce(
-          (acc, [fontWeight, file]) => {
-            if (fontWeight === 'regular' || fontWeight === '400') {
-              if (i.variants.includes('italic')) {
-                acc.push({
-                  style: 'Italic',
-                  urls: [file],
-                });
-              }
-              acc.push({
-                urls: [file],
-              });
-            } else if (fontWeight === '600') {
-              if (i.variants.includes('italic')) {
-                acc.push({
-                  style: 'Bold_Italic',
-                  urls: [file],
-                });
-              }
-              acc.push({
-                style: 'Bold',
-                urls: [file],
-              });
-            }
-            return acc;
-          },
-          [] as FontData['fonts'],
-        );
-        return {
-          name: i.family,
-          fonts: fonts,
-        };
-      });
-      setGoogleFontList(res);
+      const list = Array.isArray(data?.data?.fonts) ? data.data.fonts : [];
+      setGoogleFontList(list.filter((font) => font?.name && font.fonts?.length));
     };
-    getFont();
+    void getFont();
   }, []);
 
   if (view === 'welcome') {

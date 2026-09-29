@@ -1,0 +1,84 @@
+[
+  {
+    "file": "bg-slate.svg",
+    "id": "bg-slate",
+    "name": "Slate",
+    "tags": [
+      "gradient"
+    ],
+    "width": 1640,
+    "height": 924
+  },
+  {
+    "file": "bg-dawn.svg",
+    "id": "bg-dawn",
+    "name": "Dawn",
+    "tags": [
+      "gradient"
+    ],
+    "width": 1640,
+    "height": 924
+  },
+  {
+    "file": "bg-mint.svg",
+    "id": "bg-mint",
+    "name": "Mint",
+    "tags": [
+      "gradient"
+    ],
+    "width": 1640,
+    "height": 924
+  },
+  {
+    "file": "bg-ink.svg",
+    "id": "bg-ink",
+    "name": "Ink",
+    "tags": [
+      "gradient",
+      "dark"
+    ],
+    "width": 1640,
+    "height": 924
+  },
+  {
+    "file": "bg-paper.svg",
+    "id": "bg-paper",
+    "name": "Paper",
+    "tags": [
+      "texture",
+      "light"
+    ],
+    "width": 1640,
+    "height": 924
+  },
+  {
+    "file": "bg-grid.svg",
+    "id": "bg-grid",
+    "name": "Grid",
+    "tags": [
+      "texture"
+    ],
+    "width": 1640,
+    "height": 924
+  },
+  {
+    "file": "bg-stripes.svg",
+    "id": "bg-stripes",
+    "name": "Stripes",
+    "tags": [
+      "texture"
+    ],
+    "width": 1640,
+    "height": 924
+  },
+  {
+    "file": "bg-waves.svg",
+    "id": "bg-waves",
+    "name": "Waves",
+    "tags": [
+      "texture"
+    ],
+    "width": 1640,
+    "height": 924
+  }
+]

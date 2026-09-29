@@ -8,6 +8,8 @@
     "api": "node api/server.js",
     "dev:all": "concurrently -k -n api,web -c cyan,magenta \"npm run api\" \"npm run dev\"",
     "seed:templates": "node scripts/seed-templates.mjs",
+    "seed:assets": "node scripts/seed-assets.mjs",
+    "seed:fonts": "node scripts/seed-fonts.mjs",
     "backup": "node scripts/backup-storage.mjs",
     "build": "vite build",
     "serve": "vite preview"

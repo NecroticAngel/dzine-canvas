@@ -113,7 +113,6 @@ export const ImageContent: FC<{ onClose: () => void }> = ({ onClose }) => {
       { thumb: item.thumb, url: item.image },
       { width: item.width, height: item.height },
     );
-    axios.put(`/images?id=${item.id}`);
     if (isMobile) {
       onClose();
     }
@@ -287,7 +286,6 @@ export const ImageContent: FC<{ onClose: () => void }> = ({ onClose }) => {
                 key={item.id}
                 image={item.thumb}
                 name={item.name}
-                username={item.username}
                 onClick={() => {
                   addImage(item);
                 }}
@@ -299,11 +297,10 @@ export const ImageContent: FC<{ onClose: () => void }> = ({ onClose }) => {
         </div>
       </div>
 
-      <div css={{ flexShrink: 0, paddingLeft: 16, textAlign: 'center' }}>
-        Photos by
-        <a href="https://unsplash.com/" rel="noreferrer" target="_blank">
-          Unsplash
-        </a>
+      <div css={{ flexShrink: 0, paddingLeft: 16, paddingBottom: 12, textAlign: 'center' }}>
+        <span css={{ color: 'var(--app-text-muted)', fontSize: 12 }}>
+          Backgrounds published by this workspace
+        </span>
       </div>
     </div>
   );
