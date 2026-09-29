@@ -40,6 +40,7 @@ import {
 import { captureThumbnail } from '../../utils/exportDesign';
 import { downloadBlob } from '../../utils/download';
 import { colorToHex } from '../../utils/color';
+import { ensureFontFamily, fontFamilies, primaryFamily } from '../../utils/fonts';
 
 export type DeepPartial<T> = {
   [P in keyof T]?: T[P] extends object ? DeepPartial<T[P]> : T[P];
@@ -807,6 +808,39 @@ const moveLayerInParent = (
   return true;
 };
 
+/**
+ * Register a family's faces and report when they are usable.
+ *
+ * The re-render matters for more than the glyphs: thumbnails and exports
+ * capture the DOM, and a capture taken while the face is still loading gets the
+ * fallback font baked into the file.
+ */
+const useEnsureFont = (family: string) => {
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    if (!family) {
+      setReady(false);
+      return;
+    }
+    let cancelled = false;
+    void ensureFontFamily(family).then((available) => {
+      if (!cancelled) setReady(available);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [family]);
+  return ready;
+};
+
+/** The family a text layer asks for, read out of its own document. */
+const textLayerFamily = (props: Record<string, unknown> | undefined) => {
+  const doc = props?.doc as
+    | { content?: { attrs?: { fontFamily?: unknown } }[] }
+    | undefined;
+  return primaryFamily(doc?.content?.[0]?.attrs?.fontFamily);
+};
+
 const LayerView = ({
   layerId,
   layers,
@@ -822,6 +856,9 @@ const LayerView = ({
   const layer = layers[layerId];
   const editing = !!ctx && ctx.editingLayerId === layerId;
   const props = layer?.props as Record<string, unknown> | undefined;
+  // Called before the early return below so the hook order is stable.
+  const fontFamily = textLayerFamily(props);
+  const fontReady = useEnsureFont(fontFamily);
 
   useEffect(() => {
     if (!editing || !ctx || !props) return;
@@ -1265,6 +1302,15 @@ const LayerView = ({
           ? 'true'
           : undefined
       }
+      data-font-family={name === 'TextLayer' ? fontFamily || undefined : undefined}
+      data-font-ready={
+        name === 'TextLayer' && fontFamily
+          ? fontReady
+            ? 'true'
+            : 'false'
+          : undefined
+      }
+      data-text-anchor={selected && name === 'TextLayer' ? 'true' : undefined}
       style={frameStyle}
       onPointerDown={(e) => startInteraction('move', e)}
       onDoubleClick={(e) => {
@@ -1645,6 +1691,194 @@ const CellToolbar = () => {
         onChange={(event) => update({ background: event.target.value })}
         css={{ width: 28, height: 28, padding: 0, border: '1px solid var(--app-border)', borderRadius: 6, background: 'transparent', cursor: 'pointer' }}
       />
+    </div>
+  );
+};
+
+/**
+ * Floating editor for a selected text layer.
+ *
+ * Same anchoring approach as `CellToolbar`: it reads the selected layer's live
+ * bounding rect each frame, so it follows the layer and the zoom with no
+ * coordinate maths of its own.
+ *
+ * It offers the block's own attributes — family, size, colour, alignment —
+ * because those are the only things a text layer honours. The renderer draws
+ * `extractText(props.doc)` as one string, so the `bold` and `italic` marks the
+ * presets carry have no effect here; buttons for them would promise something
+ * that never arrives. Table cells do honour marks, which is why their toolbar
+ * has them and this one does not.
+ *
+ * The family list is the server catalogue, which is also what the loader
+ * registers faces from — so anything selectable here provably has a file.
+ */
+const TextToolbar = () => {
+  const ctx = useContext(EditorContext);
+  const [anchor, setAnchor] = useState<{ top: number; left: number } | null>(
+    null,
+  );
+
+  const selectedIds = ctx?.selectedLayerIds ?? [];
+  const id = selectedIds.length === 1 ? selectedIds[0] : null;
+  const page = ctx ? ctx.pages[ctx.activePage] : undefined;
+  const layer = id ? page?.layers?.[id] : undefined;
+  const isText = layer?.type?.resolvedName === 'TextLayer';
+  const props = (layer?.props ?? {}) as Record<string, unknown>;
+  const doc = props.doc as
+    | { type?: string; content?: { attrs?: Record<string, unknown> }[] }
+    | undefined;
+  const attrs = doc?.content?.[0]?.attrs ?? {};
+
+  useEffect(() => {
+    if (!isText) {
+      setAnchor(null);
+      return;
+    }
+    let frame = 0;
+    let last = '';
+    const tick = () => {
+      const node = document.querySelector('[data-text-anchor="true"]');
+      const rect = node?.getBoundingClientRect();
+      const key = rect
+        ? `${Math.round(rect.top)}:${Math.round(rect.left)}:${Math.round(rect.width)}`
+        : '';
+      if (key !== last) {
+        last = key;
+        setAnchor(
+          rect ? { top: rect.top, left: rect.left + rect.width / 2 } : null,
+        );
+      }
+      frame = window.requestAnimationFrame(tick);
+    };
+    frame = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(frame);
+  }, [isText]);
+
+  if (!ctx || !isText || !id || !anchor) return null;
+
+  const family = primaryFamily(attrs.fontFamily) || 'Nunito';
+  const catalogue = fontFamilies();
+  // A layer can name a family the catalogue does not have — an older design, or
+  // one imported from elsewhere. Keep it selectable rather than silently
+  // rewriting the text to the first option.
+  const familyOptions = catalogue.includes(family)
+    ? catalogue
+    : [family, ...catalogue];
+
+  const size = String(attrs.fontSize ?? '24px');
+  const sizeOptions = FONT_SIZES.includes(size)
+    ? FONT_SIZES
+    : [...FONT_SIZES, size].sort((a, b) => parseFloat(a) - parseFloat(b));
+  const align = String(attrs.textAlign ?? 'center');
+
+  /** Every block, so a multi-line layer keeps one family throughout. */
+  const patchAttrs = (patch: Record<string, unknown>) => {
+    const content = Array.isArray(doc?.content) ? doc.content : [];
+    ctx.actions.updateLayerProps(id, {
+      doc: {
+        type: doc?.type ?? 'doc',
+        content: content.map((block) => ({
+          ...block,
+          attrs: { ...(block.attrs ?? {}), ...patch },
+        })),
+      },
+    });
+  };
+
+  const controlCss = {
+    height: 28,
+    border: '1px solid var(--app-border)',
+    background: 'transparent',
+    color: 'var(--app-text-strong)',
+    borderRadius: 6,
+    fontSize: 12,
+  } as const;
+
+  const alignCss = (value: string) => ({
+    minWidth: 28,
+    height: 28,
+    padding: '0 6px',
+    border: `1px solid ${align === value ? '#3d8eff' : 'var(--app-border)'}`,
+    background: align === value ? 'rgba(61,142,255,.16)' : 'transparent',
+    color: align === value ? '#3d8eff' : 'var(--app-text-strong)',
+    borderRadius: 6,
+    cursor: 'pointer',
+    fontSize: 12,
+    fontWeight: 700,
+    lineHeight: 1,
+  });
+
+  return (
+    <div
+      css={{
+        position: 'fixed',
+        top: anchor.top,
+        left: anchor.left,
+        transform: 'translate(-50%, calc(-100% - 12px))',
+        zIndex: 60,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        padding: 6,
+        borderRadius: 10,
+        border: '1px solid var(--app-border)',
+        background: 'var(--app-panel)',
+        boxShadow: '0 10px 30px rgba(0,0,0,.35)',
+      }}
+      onPointerDown={(event) => event.stopPropagation()}
+    >
+      <select
+        aria-label="Font family"
+        title="Font"
+        value={family}
+        onChange={(event) => patchAttrs({ fontFamily: event.target.value })}
+        css={{ ...controlCss, maxWidth: 150, padding: '0 4px', cursor: 'pointer' }}
+      >
+        {familyOptions.map((name) => (
+          <option key={name} value={name}>
+            {name}
+          </option>
+        ))}
+      </select>
+      <select
+        aria-label="Font size"
+        title="Size"
+        value={size}
+        onChange={(event) => patchAttrs({ fontSize: event.target.value })}
+        css={{ ...controlCss, padding: '0 4px', cursor: 'pointer' }}
+      >
+        {sizeOptions.map((option) => (
+          <option key={option} value={option}>
+            {option.replace('px', '')}
+          </option>
+        ))}
+      </select>
+      <input
+        type="color"
+        aria-label="Text colour"
+        title="Text colour"
+        value={colorToHex(attrs.color, '#111111')}
+        onChange={(event) => patchAttrs({ color: event.target.value })}
+        css={{
+          ...controlCss,
+          width: 28,
+          padding: 0,
+          cursor: 'pointer',
+        }}
+      />
+      <span css={{ width: 1, height: 18, background: 'var(--app-border)' }} />
+      {(['left', 'center', 'right'] as const).map((value) => (
+        <button
+          key={value}
+          type="button"
+          aria-label={`Align ${value}`}
+          title={`Align ${value}`}
+          css={alignCss(value)}
+          onClick={() => patchAttrs({ textAlign: value })}
+        >
+          {value === 'left' ? 'L' : value === 'center' ? 'C' : 'R'}
+        </button>
+      ))}
     </div>
   );
 };
@@ -3238,6 +3472,7 @@ export const DesignFrame = ({ data }: { data?: SerializedPage[] }) => {
         </div>
       </div>
       <CellToolbar />
+      <TextToolbar />
       <QrToolbar />
       <DrawToolbar />
       <AlignToolbar />

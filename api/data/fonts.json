@@ -1,6 +1,6 @@
 {
-  "source": "https://fonts.googleapis.com/css2 (keyless)",
-  "families": 22,
+  "source": "https://fonts.googleapis.com/css2 (keyless) -> served locally from api/data/fonts",
+  "families": 25,
   "fonts": [
     {
       "name": "Inter",
@@ -8,24 +8,24 @@
         {
           "style": "Italic",
           "urls": [
-            "https://fonts.gstatic.com/s/inter/v20/UcCM3FwrK3iLTcvneQg7Ca725JhhKnNqk4j1ebLhAm8SrXTc2dthjQ.ttf"
+            "/fonts/files/inter-italic.ttf"
           ]
         },
         {
           "style": "Bold_Italic",
           "urls": [
-            "https://fonts.gstatic.com/s/inter/v20/UcCM3FwrK3iLTcvneQg7Ca725JhhKnNqk4j1ebLhAm8SrXTcPtxhjQ.ttf"
+            "/fonts/files/inter-bold-italic.ttf"
           ]
         },
         {
           "urls": [
-            "https://fonts.gstatic.com/s/inter/v20/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuLyfMZg.ttf"
+            "/fonts/files/inter-regular.ttf"
           ]
         },
         {
           "style": "Bold",
           "urls": [
-            "https://fonts.gstatic.com/s/inter/v20/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuFuYMZg.ttf"
+            "/fonts/files/inter-bold.ttf"
           ]
         }
       ]
@@ -36,24 +36,24 @@
         {
           "style": "Italic",
           "urls": [
-            "https://fonts.gstatic.com/s/roboto/v51/KFOKCnqEu92Fr1Mu53ZEC9_Vu3r1gIhOszmOClHrs6ljXfMMLoHQiA8.ttf"
+            "/fonts/files/roboto-italic.ttf"
           ]
         },
         {
           "style": "Bold_Italic",
           "urls": [
-            "https://fonts.gstatic.com/s/roboto/v51/KFOKCnqEu92Fr1Mu53ZEC9_Vu3r1gIhOszmOClHrs6ljXfMMLmbXiA8.ttf"
+            "/fonts/files/roboto-bold-italic.ttf"
           ]
         },
         {
           "urls": [
-            "https://fonts.gstatic.com/s/roboto/v51/KFOMCnqEu92Fr1ME7kSn66aGLdTylUAMQXC89YmC2DPNWubEbWmT.ttf"
+            "/fonts/files/roboto-regular.ttf"
           ]
         },
         {
           "style": "Bold",
           "urls": [
-            "https://fonts.gstatic.com/s/roboto/v51/KFOMCnqEu92Fr1ME7kSn66aGLdTylUAMQXC89YmC2DPNWuYjammT.ttf"
+            "/fonts/files/roboto-bold.ttf"
           ]
         }
       ]
@@ -64,24 +64,24 @@
         {
           "style": "Italic",
           "urls": [
-            "https://fonts.gstatic.com/s/opensans/v44/memQYaGs126MiZpBA-UFUIcVXSCEkx2cmqvXlWq8tWZ0Pw86hd0Rk8ZkaVc.ttf"
+            "/fonts/files/open-sans-italic.ttf"
           ]
         },
         {
           "style": "Bold_Italic",
           "urls": [
-            "https://fonts.gstatic.com/s/opensans/v44/memQYaGs126MiZpBA-UFUIcVXSCEkx2cmqvXlWq8tWZ0Pw86hd0RkyFjaVc.ttf"
+            "/fonts/files/open-sans-bold-italic.ttf"
           ]
         },
         {
           "urls": [
-            "https://fonts.gstatic.com/s/opensans/v44/memSYaGs126MiZpBA-UvWbX2vVnXBbObj2OVZyOOSr4dVJWUgsjZ0C4n.ttf"
+            "/fonts/files/open-sans-regular.ttf"
           ]
         },
         {
           "style": "Bold",
           "urls": [
-            "https://fonts.gstatic.com/s/opensans/v44/memSYaGs126MiZpBA-UvWbX2vVnXBbObj2OVZyOOSr4dVJWUgsg-1y4n.ttf"
+            "/fonts/files/open-sans-bold.ttf"
           ]
         }
       ]
@@ -92,24 +92,24 @@
         {
           "style": "Italic",
           "urls": [
-            "https://fonts.gstatic.com/s/lato/v25/S6u8w4BMUTPHjxswWw.ttf"
+            "/fonts/files/lato-italic.ttf"
           ]
         },
         {
           "style": "Bold_Italic",
           "urls": [
-            "https://fonts.gstatic.com/s/lato/v25/S6u_w4BMUTPHjxsI5wqPHA.ttf"
+            "/fonts/files/lato-bold-italic.ttf"
           ]
         },
         {
           "urls": [
-            "https://fonts.gstatic.com/s/lato/v25/S6uyw4BMUTPHvxk.ttf"
+            "/fonts/files/lato-regular.ttf"
           ]
         },
         {
           "style": "Bold",
           "urls": [
-            "https://fonts.gstatic.com/s/lato/v25/S6u9w4BMUTPHh6UVew8.ttf"
+            "/fonts/files/lato-bold.ttf"
           ]
         }
       ]
@@ -120,24 +120,24 @@
         {
           "style": "Italic",
           "urls": [
-            "https://fonts.gstatic.com/s/montserrat/v31/JTUFjIg1_i6t8kCHKm459Wx7xQYXK0vOoz6jq6R9aX8.ttf"
+            "/fonts/files/montserrat-italic.ttf"
           ]
         },
         {
           "style": "Bold_Italic",
           "urls": [
-            "https://fonts.gstatic.com/s/montserrat/v31/JTUFjIg1_i6t8kCHKm459Wx7xQYXK0vOoz6jq0N6aX8.ttf"
+            "/fonts/files/montserrat-bold-italic.ttf"
           ]
         },
         {
           "urls": [
-            "https://fonts.gstatic.com/s/montserrat/v31/JTUHjIg1_i6t8kCHKm4532VJOt5-QNFgpCtr6Ew-.ttf"
+            "/fonts/files/montserrat-regular.ttf"
           ]
         },
         {
           "style": "Bold",
           "urls": [
-            "https://fonts.gstatic.com/s/montserrat/v31/JTUHjIg1_i6t8kCHKm4532VJOt5-QNFgpCuM70w-.ttf"
+            "/fonts/files/montserrat-bold.ttf"
           ]
         }
       ]
@@ -148,24 +148,24 @@
         {
           "style": "Italic",
           "urls": [
-            "https://fonts.gstatic.com/s/poppins/v24/pxiGyp8kv8JHgFVrJJLedw.ttf"
+            "/fonts/files/poppins-italic.ttf"
           ]
         },
         {
           "style": "Bold_Italic",
           "urls": [
-            "https://fonts.gstatic.com/s/poppins/v24/pxiDyp8kv8JHgFVrJJLmy15lEA.ttf"
+            "/fonts/files/poppins-bold-italic.ttf"
           ]
         },
         {
           "urls": [
-            "https://fonts.gstatic.com/s/poppins/v24/pxiEyp8kv8JHgFVrFJA.ttf"
+            "/fonts/files/poppins-regular.ttf"
           ]
         },
         {
           "style": "Bold",
           "urls": [
-            "https://fonts.gstatic.com/s/poppins/v24/pxiByp8kv8JHgFVrLCz7V1s.ttf"
+            "/fonts/files/poppins-bold.ttf"
           ]
         }
       ]
@@ -176,24 +176,24 @@
         {
           "style": "Italic",
           "urls": [
-            "https://fonts.gstatic.com/s/sourcesans3/v19/nwpDtKy2OAdR1K-IwhWudF-R3woAa8opPOrG97lwqLlO9C4.ttf"
+            "/fonts/files/source-sans-3-italic.ttf"
           ]
         },
         {
           "style": "Bold_Italic",
           "urls": [
-            "https://fonts.gstatic.com/s/sourcesans3/v19/nwpDtKy2OAdR1K-IwhWudF-R3woAa8opPOrG97lwqF5J9C4.ttf"
+            "/fonts/files/source-sans-3-bold-italic.ttf"
           ]
         },
         {
           "urls": [
-            "https://fonts.gstatic.com/s/sourcesans3/v19/nwpBtKy2OAdR1K-IwhWudF-R9QMylBJAV3Bo8Ky461EN.ttf"
+            "/fonts/files/source-sans-3-regular.ttf"
           ]
         },
         {
           "style": "Bold",
           "urls": [
-            "https://fonts.gstatic.com/s/sourcesans3/v19/nwpBtKy2OAdR1K-IwhWudF-R9QMylBJAV3Bo8Kxf7FEN.ttf"
+            "/fonts/files/source-sans-3-bold.ttf"
           ]
         }
       ]
@@ -204,24 +204,24 @@
         {
           "style": "Italic",
           "urls": [
-            "https://fonts.gstatic.com/s/nunito/v32/XRXK3I6Li01BKofIMPyPbj8d7IEAGXNirXA3ig.ttf"
+            "/fonts/files/nunito-italic.ttf"
           ]
         },
         {
           "style": "Bold_Italic",
           "urls": [
-            "https://fonts.gstatic.com/s/nunito/v32/XRXK3I6Li01BKofIMPyPbj8d7IEAGXNiSnc3ig.ttf"
+            "/fonts/files/nunito-bold-italic.ttf"
           ]
         },
         {
           "urls": [
-            "https://fonts.gstatic.com/s/nunito/v32/XRXI3I6Li01BKofiOc5wtlZ2di8HDLshRTM.ttf"
+            "/fonts/files/nunito-regular.ttf"
           ]
         },
         {
           "style": "Bold",
           "urls": [
-            "https://fonts.gstatic.com/s/nunito/v32/XRXI3I6Li01BKofiOc5wtlZ2di8HDFwmRTM.ttf"
+            "/fonts/files/nunito-bold.ttf"
           ]
         }
       ]
@@ -232,24 +232,24 @@
         {
           "style": "Italic",
           "urls": [
-            "https://fonts.gstatic.com/s/raleway/v37/1Pt_g8zYS_SKggPNyCgSQamb1W0lwk4S4WjMPrQ.ttf"
+            "/fonts/files/raleway-italic.ttf"
           ]
         },
         {
           "style": "Bold_Italic",
           "urls": [
-            "https://fonts.gstatic.com/s/raleway/v37/1Pt_g8zYS_SKggPNyCgSQamb1W0lwk4S4Y_LPrQ.ttf"
+            "/fonts/files/raleway-bold-italic.ttf"
           ]
         },
         {
           "urls": [
-            "https://fonts.gstatic.com/s/raleway/v37/1Ptxg8zYS_SKggPN4iEgvnHyvveLxVvaooCP.ttf"
+            "/fonts/files/raleway-regular.ttf"
           ]
         },
         {
           "style": "Bold",
           "urls": [
-            "https://fonts.gstatic.com/s/raleway/v37/1Ptxg8zYS_SKggPN4iEgvnHyvveLxVs9pYCP.ttf"
+            "/fonts/files/raleway-bold.ttf"
           ]
         }
       ]
@@ -260,24 +260,24 @@
         {
           "style": "Italic",
           "urls": [
-            "https://fonts.gstatic.com/s/worksans/v24/QGY9z_wNahGAdqQ43Rh_ebrnlwyYfEPxPoGU3msJow.ttf"
+            "/fonts/files/work-sans-italic.ttf"
           ]
         },
         {
           "style": "Bold_Italic",
           "urls": [
-            "https://fonts.gstatic.com/s/worksans/v24/QGY9z_wNahGAdqQ43Rh_ebrnlwyYfEPxPoGUOWwJow.ttf"
+            "/fonts/files/work-sans-bold-italic.ttf"
           ]
         },
         {
           "urls": [
-            "https://fonts.gstatic.com/s/worksans/v24/QGY_z_wNahGAdqQ43RhVcIgYT2Xz5u32K0nXNig.ttf"
+            "/fonts/files/work-sans-regular.ttf"
           ]
         },
         {
           "style": "Bold",
           "urls": [
-            "https://fonts.gstatic.com/s/worksans/v24/QGY_z_wNahGAdqQ43RhVcIgYT2Xz5u32K67QNig.ttf"
+            "/fonts/files/work-sans-bold.ttf"
           ]
         }
       ]
@@ -288,24 +288,24 @@
         {
           "style": "Italic",
           "urls": [
-            "https://fonts.gstatic.com/s/dmsans/v17/rP2rp2ywxg089UriCZaSExd86J3t9jz86Mvy4qCRAL19DksVat-JDW3z.ttf"
+            "/fonts/files/dm-sans-italic.ttf"
           ]
         },
         {
           "style": "Bold_Italic",
           "urls": [
-            "https://fonts.gstatic.com/s/dmsans/v17/rP2rp2ywxg089UriCZaSExd86J3t9jz86Mvy4qCRAL19DksVat9uCm3z.ttf"
+            "/fonts/files/dm-sans-bold-italic.ttf"
           ]
         },
         {
           "urls": [
-            "https://fonts.gstatic.com/s/dmsans/v17/rP2tp2ywxg089UriI5-g4vlH9VoD8CmcqZG40F9JadbnoEwAopxhTg.ttf"
+            "/fonts/files/dm-sans-regular.ttf"
           ]
         },
         {
           "style": "Bold",
           "urls": [
-            "https://fonts.gstatic.com/s/dmsans/v17/rP2tp2ywxg089UriI5-g4vlH9VoD8CmcqZG40F9JadbnoEwARZthTg.ttf"
+            "/fonts/files/dm-sans-bold.ttf"
           ]
         }
       ]
@@ -315,13 +315,13 @@
       "fonts": [
         {
           "urls": [
-            "https://fonts.gstatic.com/s/manrope/v20/xn7_YHE41ni1AdIRqAuZuw1Bx9mbZk79FO_F.ttf"
+            "/fonts/files/manrope-regular.ttf"
           ]
         },
         {
           "style": "Bold",
           "urls": [
-            "https://fonts.gstatic.com/s/manrope/v20/xn7_YHE41ni1AdIRqAuZuw1Bx9mbZk4aE-_F.ttf"
+            "/fonts/files/manrope-bold.ttf"
           ]
         }
       ]
@@ -332,24 +332,24 @@
         {
           "style": "Italic",
           "urls": [
-            "https://fonts.gstatic.com/s/barlow/v13/7cHrv4kjgoGqM7E_Ccs8.ttf"
+            "/fonts/files/barlow-italic.ttf"
           ]
         },
         {
           "style": "Bold_Italic",
           "urls": [
-            "https://fonts.gstatic.com/s/barlow/v13/7cHsv4kjgoGqM7E_CfOA5Vop.ttf"
+            "/fonts/files/barlow-bold-italic.ttf"
           ]
         },
         {
           "urls": [
-            "https://fonts.gstatic.com/s/barlow/v13/7cHpv4kjgoGqM7EPCw.ttf"
+            "/fonts/files/barlow-regular.ttf"
           ]
         },
         {
           "style": "Bold",
           "urls": [
-            "https://fonts.gstatic.com/s/barlow/v13/7cHqv4kjgoGqM7E3t-4c4A.ttf"
+            "/fonts/files/barlow-bold.ttf"
           ]
         }
       ]
@@ -360,24 +360,24 @@
         {
           "style": "Italic",
           "urls": [
-            "https://fonts.gstatic.com/s/playfairdisplay/v40/nuFRD-vYSZviVYUb_rj3ij__anPXDTnCjmHKM4nYO7KN_qiTbtY.ttf"
+            "/fonts/files/playfair-display-italic.ttf"
           ]
         },
         {
           "style": "Bold_Italic",
           "urls": [
-            "https://fonts.gstatic.com/s/playfairdisplay/v40/nuFRD-vYSZviVYUb_rj3ij__anPXDTnCjmHKM4nYO7KN_k-UbtY.ttf"
+            "/fonts/files/playfair-display-bold-italic.ttf"
           ]
         },
         {
           "urls": [
-            "https://fonts.gstatic.com/s/playfairdisplay/v40/nuFvD-vYSZviVYUb_rj3ij__anPXJzDwcbmjWBN2PKdFvUDQ.ttf"
+            "/fonts/files/playfair-display-regular.ttf"
           ]
         },
         {
           "style": "Bold",
           "urls": [
-            "https://fonts.gstatic.com/s/playfairdisplay/v40/nuFvD-vYSZviVYUb_rj3ij__anPXJzDwcbmjWBN2PKeiukDQ.ttf"
+            "/fonts/files/playfair-display-bold.ttf"
           ]
         }
       ]
@@ -388,24 +388,24 @@
         {
           "style": "Italic",
           "urls": [
-            "https://fonts.gstatic.com/s/merriweather/v33/u-4B0qyriQwlOrhSvowK_l5-eTxCVx0ZbwLvKH2Gk9hLmp0v5yA-xXPqCzLvPee1XYk_XSf-FmTCUF3w.ttf"
+            "/fonts/files/merriweather-italic.ttf"
           ]
         },
         {
           "style": "Bold_Italic",
           "urls": [
-            "https://fonts.gstatic.com/s/merriweather/v33/u-4B0qyriQwlOrhSvowK_l5-eTxCVx0ZbwLvKH2Gk9hLmp0v5yA-xXPqCzLvPee1XYk_XSf-FmQlV13w.ttf"
+            "/fonts/files/merriweather-bold-italic.ttf"
           ]
         },
         {
           "urls": [
-            "https://fonts.gstatic.com/s/merriweather/v33/u-4D0qyriQwlOrhSvowK_l5UcA6zuSYEqOzpPe3HOZJ5eX1WtLaQwmYiScCmDxhtNOKl8yDr3icqEw.ttf"
+            "/fonts/files/merriweather-regular.ttf"
           ]
         },
         {
           "style": "Bold",
           "urls": [
-            "https://fonts.gstatic.com/s/merriweather/v33/u-4D0qyriQwlOrhSvowK_l5UcA6zuSYEqOzpPe3HOZJ5eX1WtLaQwmYiScCmDxhtNOKl8yDrOSAqEw.ttf"
+            "/fonts/files/merriweather-bold.ttf"
           ]
         }
       ]
@@ -416,24 +416,24 @@
         {
           "style": "Italic",
           "urls": [
-            "https://fonts.gstatic.com/s/librebaskerville/v24/kmKWZrc3Hgbbcjq75U4uslyuy4kn0qNccR04_RUJeby2OU36SgNK.ttf"
+            "/fonts/files/libre-baskerville-italic.ttf"
           ]
         },
         {
           "style": "Bold_Italic",
           "urls": [
-            "https://fonts.gstatic.com/s/librebaskerville/v24/kmKWZrc3Hgbbcjq75U4uslyuy4kn0qNccR04_RUJeby2OU0dTQNK.ttf"
+            "/fonts/files/libre-baskerville-bold-italic.ttf"
           ]
         },
         {
           "urls": [
-            "https://fonts.gstatic.com/s/librebaskerville/v24/kmKUZrc3Hgbbcjq75U4uslyuy4kn0olVQ-LglH6T17uj8Q4SCQ.ttf"
+            "/fonts/files/libre-baskerville-regular.ttf"
           ]
         },
         {
           "style": "Bold",
           "urls": [
-            "https://fonts.gstatic.com/s/librebaskerville/v24/kmKUZrc3Hgbbcjq75U4uslyuy4kn0olVQ-LglH6T17ujFgkSCQ.ttf"
+            "/fonts/files/libre-baskerville-bold.ttf"
           ]
         }
       ]
@@ -443,13 +443,13 @@
       "fonts": [
         {
           "urls": [
-            "https://fonts.gstatic.com/s/spacegrotesk/v22/V8mQoQDjQSkFtoMM3T6r8E7mF71Q-gOoraIAEj7oUUsj.ttf"
+            "/fonts/files/space-grotesk-regular.ttf"
           ]
         },
         {
           "style": "Bold",
           "urls": [
-            "https://fonts.gstatic.com/s/spacegrotesk/v22/V8mQoQDjQSkFtoMM3T6r8E7mF71Q-gOoraIAEj4PVksj.ttf"
+            "/fonts/files/space-grotesk-bold.ttf"
           ]
         }
       ]
@@ -459,13 +459,13 @@
       "fonts": [
         {
           "urls": [
-            "https://fonts.gstatic.com/s/oswald/v57/TK3_WkUHHAIjg75cFRf3bXL8LICs1_FvgUE.ttf"
+            "/fonts/files/oswald-regular.ttf"
           ]
         },
         {
           "style": "Bold",
           "urls": [
-            "https://fonts.gstatic.com/s/oswald/v57/TK3_WkUHHAIjg75cFRf3bXL8LICs1xZogUE.ttf"
+            "/fonts/files/oswald-bold.ttf"
           ]
         }
       ]
@@ -475,7 +475,7 @@
       "fonts": [
         {
           "urls": [
-            "https://fonts.gstatic.com/s/bebasneue/v16/JTUSjIg69CK48gW7PXooxW4.ttf"
+            "/fonts/files/bebas-neue-regular.ttf"
           ]
         }
       ]
@@ -485,7 +485,7 @@
       "fonts": [
         {
           "urls": [
-            "https://fonts.gstatic.com/s/lobster/v32/neILzCirqoswsqX9_oU.ttf"
+            "/fonts/files/lobster-regular.ttf"
           ]
         }
       ]
@@ -495,7 +495,7 @@
       "fonts": [
         {
           "urls": [
-            "https://fonts.gstatic.com/s/pacifico/v23/FwZY7-Qmy14u9lezJ96A.ttf"
+            "/fonts/files/pacifico-regular.ttf"
           ]
         }
       ]
@@ -505,13 +505,55 @@
       "fonts": [
         {
           "urls": [
-            "https://fonts.gstatic.com/s/caveat/v23/WnznHAc5bAfYB2QRah7pcpNvOx-pjfJ9SII.ttf"
+            "/fonts/files/caveat-regular.ttf"
           ]
         },
         {
           "style": "Bold",
           "urls": [
-            "https://fonts.gstatic.com/s/caveat/v23/WnznHAc5bAfYB2QRah7pcpNvOx-pjRV6SII.ttf"
+            "/fonts/files/caveat-bold.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Agdasima",
+      "fonts": [
+        {
+          "urls": [
+            "/fonts/files/agdasima-regular.ttf"
+          ]
+        },
+        {
+          "style": "Bold",
+          "urls": [
+            "/fonts/files/agdasima-bold.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Acme",
+      "fonts": [
+        {
+          "urls": [
+            "/fonts/files/acme-regular.ttf"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Akatab",
+      "fonts": [
+        {
+          "urls": [
+            "/fonts/files/akatab-regular.ttf"
+          ]
+        },
+        {
+          "style": "Bold",
+          "urls": [
+            "/fonts/files/akatab-bold.ttf"
           ]
         }
       ]

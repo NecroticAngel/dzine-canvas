@@ -4,6 +4,7 @@ import type { FontData } from '@lidojs/design-core';
 import axios from 'axios';
 import { useEffect, useState } from 'react';
 import { DzineCanvasEditor } from '../components';
+import { setFontCatalogue } from '../../../utils/fonts';
 import { WelcomePage } from './WelcomePage';
 
 export const DesignPage = () => {
@@ -24,7 +25,12 @@ export const DesignPage = () => {
       // so a rejection never reaches the `.catch` above and the payload can be an
       // array where an object was expected. Never trust the shape.
       const list = Array.isArray(data?.data?.fonts) ? data.data.fonts : [];
-      setGoogleFontList(list.filter((font) => font?.name && font.fonts?.length));
+      const usable = list.filter((font) => font?.name && font.fonts?.length);
+      setGoogleFontList(usable);
+      // The loader needs the same catalogue: nothing else knows which files a
+      // family name maps to, and without this a layer naming Oswald renders in
+      // the fallback.
+      setFontCatalogue(usable);
     };
     void getFont();
   }, []);

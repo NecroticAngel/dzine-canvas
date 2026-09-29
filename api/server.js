@@ -1773,6 +1773,42 @@ api.get('/fonts', async (_req, res) => {
   res.json(payload);
 });
 
+/*
+ * The font files themselves.
+ *
+ * `scripts/fetch-fonts.mjs` pulls each face into `api/data/fonts/` and rewrites
+ * the catalogue's urls to point here, so a design renders from our own origin
+ * instead of a third party's CDN. An operator can drop replacements in
+ * `<storageRoot>/fonts/` to override a face without rebuilding the image.
+ *
+ * The name is matched against a strict pattern rather than being joined onto the
+ * directory and hoped for: this route takes a path segment from the client, and
+ * `../../` in a font name is the obvious thing to try.
+ */
+const FONT_FILE_PATTERN = /^[a-z0-9][a-z0-9-]*\.ttf$/;
+const PACKAGED_FONT_DIR = path.join(__dirname, 'data', 'fonts');
+
+api.get('/fonts/files/:name', (req, res) => {
+  const name = String(req.params.name ?? '');
+  if (!FONT_FILE_PATTERN.test(name)) {
+    res.status(400).json({ error: 'Invalid font name' });
+    return;
+  }
+
+  const override = path.join(bootPaths.storageRoot, 'fonts', name);
+  const file = existsSync(override) ? override : path.join(PACKAGED_FONT_DIR, name);
+  if (!existsSync(file)) {
+    res.status(404).json({ error: 'Unknown font' });
+    return;
+  }
+
+  // Immutable because the name changes if the file changes: a replacement face
+  // is saved under a new name by the fetch script, so nothing can go stale.
+  res.setHeader('Content-Type', 'font/ttf');
+  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  res.sendFile(file);
+});
+
 app.use(`${BASE_PATH}/api`, api);
 app.get('/health', (_req, res) => res.json({ ok: true }));
 

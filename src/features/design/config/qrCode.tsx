@@ -155,47 +155,6 @@ export const qrCodeList: QrCodeItem[] = [
               },
               scale: 1.2075471698113207,
               rotate: 0,
-              fonts: [
-                {
-                  name: 'Roboto',
-                  fonts: [
-                    {
-                      style: 'Bold',
-                      urls: [
-                        'https://lidojs-fonts.s3.us-east-2.amazonaws.com/Roboto/Roboto-Bold.woff2',
-                      ],
-                    },
-                    {
-                      style: 'Bold_Italic',
-                      urls: [
-                        'https://lidojs-fonts.s3.us-east-2.amazonaws.com/Roboto/Roboto-Bold.woff2',
-                      ],
-                    },
-                    {
-                      style: 'Bold',
-                      urls: [
-                        'https://lidojs-fonts.s3.us-east-2.amazonaws.com/Roboto/Roboto-Bold.woff2',
-                      ],
-                    },
-                    {
-                      urls: [
-                        'https://lidojs-fonts.s3.us-east-2.amazonaws.com/Roboto/Roboto-Regular.woff2',
-                      ],
-                    },
-                    {
-                      style: 'Italic',
-                      urls: [
-                        'https://lidojs-fonts.s3.us-east-2.amazonaws.com/Roboto/Roboto-Regular.woff2',
-                      ],
-                    },
-                    {
-                      urls: [
-                        'https://lidojs-fonts.s3.us-east-2.amazonaws.com/Roboto/Roboto-Regular.woff2',
-                      ],
-                    },
-                  ],
-                },
-              ],
               colors: ['rgb(0, 0, 0)', 'rgb(255, 255, 255)'],
               fontSizes: [38],
             },
@@ -310,47 +269,6 @@ export const qrCodeList: QrCodeItem[] = [
               },
               scale: 1.2075471698113207,
               rotate: 0,
-              fonts: [
-                {
-                  name: 'Roboto',
-                  fonts: [
-                    {
-                      style: 'Bold',
-                      urls: [
-                        'https://lidojs-fonts.s3.us-east-2.amazonaws.com/Roboto/Roboto-Bold.woff2',
-                      ],
-                    },
-                    {
-                      style: 'Bold_Italic',
-                      urls: [
-                        'https://lidojs-fonts.s3.us-east-2.amazonaws.com/Roboto/Roboto-Bold.woff2',
-                      ],
-                    },
-                    {
-                      style: 'Bold',
-                      urls: [
-                        'https://lidojs-fonts.s3.us-east-2.amazonaws.com/Roboto/Roboto-Bold.woff2',
-                      ],
-                    },
-                    {
-                      urls: [
-                        'https://lidojs-fonts.s3.us-east-2.amazonaws.com/Roboto/Roboto-Regular.woff2',
-                      ],
-                    },
-                    {
-                      style: 'Italic',
-                      urls: [
-                        'https://lidojs-fonts.s3.us-east-2.amazonaws.com/Roboto/Roboto-Regular.woff2',
-                      ],
-                    },
-                    {
-                      urls: [
-                        'https://lidojs-fonts.s3.us-east-2.amazonaws.com/Roboto/Roboto-Regular.woff2',
-                      ],
-                    },
-                  ],
-                },
-              ],
               colors: ['rgb(0, 0, 0)', 'rgb(255, 255, 255)'],
               fontSizes: [38],
             },

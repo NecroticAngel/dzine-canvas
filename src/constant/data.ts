@@ -98,18 +98,6 @@ export const data = [
           },
           scale: 1.6664659843467788,
           rotate: 0,
-          fonts: [
-            {
-              name: 'Agdasima',
-              fonts: [
-                {
-                  urls: [
-                    'https://fonts.gstatic.com/s/agdasima/v4/PN_zRfyxp2f1fUCgAMg6rzjb_-Da.ttf',
-                  ],
-                },
-              ],
-            },
-          ],
           colors: ['rgb(0, 0, 0)'],
           fontSizes: [42],
         },
@@ -159,24 +147,6 @@ export const data = [
           },
           scale: 1,
           rotate: 0,
-          fonts: [
-            {
-              name: 'Oswald',
-              fonts: [
-                {
-                  style: 'Bold',
-                  urls: [
-                    'https://lidojs-fonts.s3.us-east-2.amazonaws.com/Oswald/Oswald-Bold.woff2',
-                  ],
-                },
-                {
-                  urls: [
-                    'https://lidojs-fonts.s3.us-east-2.amazonaws.com/Oswald/Oswald-Regular.woff2',
-                  ],
-                },
-              ],
-            },
-          ],
           colors: ['rgb(0, 0, 0)'],
           fontSizes: [18],
           effect: null,
@@ -227,24 +197,6 @@ export const data = [
           },
           scale: 1,
           rotate: 0,
-          fonts: [
-            {
-              name: 'Oswald',
-              fonts: [
-                {
-                  style: 'Bold',
-                  urls: [
-                    'https://lidojs-fonts.s3.us-east-2.amazonaws.com/Oswald/Oswald-Bold.woff2',
-                  ],
-                },
-                {
-                  urls: [
-                    'https://lidojs-fonts.s3.us-east-2.amazonaws.com/Oswald/Oswald-Regular.woff2',
-                  ],
-                },
-              ],
-            },
-          ],
           colors: ['rgb(0, 0, 0)'],
           fontSizes: [18],
           effect: null,
@@ -295,24 +247,6 @@ export const data = [
           },
           scale: 1,
           rotate: 0,
-          fonts: [
-            {
-              name: 'Oswald',
-              fonts: [
-                {
-                  style: 'Bold',
-                  urls: [
-                    'https://lidojs-fonts.s3.us-east-2.amazonaws.com/Oswald/Oswald-Bold.woff2',
-                  ],
-                },
-                {
-                  urls: [
-                    'https://lidojs-fonts.s3.us-east-2.amazonaws.com/Oswald/Oswald-Regular.woff2',
-                  ],
-                },
-              ],
-            },
-          ],
           colors: ['rgb(0, 0, 0)'],
           fontSizes: [18],
           effect: null,

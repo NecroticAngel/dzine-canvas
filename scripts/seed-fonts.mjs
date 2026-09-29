@@ -51,6 +51,13 @@ const FAMILIES = [
   'Lobster',
   'Pacifico',
   'Caveat',
+  // The three below are not here to widen the choice: the packaged sample
+  // pages, the text effects and the table presets already name them, and a
+  // family that is asked for but absent from the catalogue renders in the
+  // fallback with nothing to indicate why.
+  'Agdasima',
+  'Acme',
+  'Akatab',
 ];
 
 // An old user agent is what makes the API answer with TrueType files rather

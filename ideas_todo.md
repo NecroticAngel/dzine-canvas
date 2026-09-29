@@ -242,8 +242,8 @@ with them, and creates its own designs. Decisions already taken: orgs with multi
 
 **Next**
 1. Tier 7 differentiators (magic resize, brand kit, share links).
-2. Third-party font origins (`lidojs-fonts.s3…`, `fonts.gstatic.com`) — see §5. The last external
-   dependency the editor has, and the same class of problem Tier 4 fixed for googleapis.
+2. Render text layers properly, so bold and italic marks work and `/texts` presets stop looking
+   identical (see the gaps list under the font work).
 3. Export selected-layer-only, which needs the layer renderer to stamp an id.
 4. Deferred cleanups at the bottom of §5.
 
@@ -356,9 +356,6 @@ before you trust an `Invoke-RestMethod` assertion.
     reached them. The same edit silently deleted the neighbouring Ctrl+Y handler. Both were only
     visible by actually pressing the keys.
 
-Test data in the library: `Portraitdfsfe` (used for testing),
-`Square` (created while reproducing the table bug — safe to delete).
-
 27. **`qrcode`'s browser build parses colours itself and only accepts hex.** Passing the `rgb(r, g, b)`
     that layer props and the presets actually store throws `Invalid hex color: rgb(30, 30, 45)` — from
     inside a promise, so it fails silently into a blank tile. Both `QRCode.toDataURL` and
@@ -375,8 +372,32 @@ Test data in the library: `Portraitdfsfe` (used for testing),
     tile from the preset's own payload and colours means it cannot drift — the same reasoning as the
     template previews, and it removed 22 KB of assets and 94 KB of dead base64 from the bundle.
 
+30. **A config hook that is declared and never called is a feature that does not exist.** `Editor`'s
+    config type has `getFonts?: (query) => Promise<unknown>`, `DesignPage` fetches the catalogue,
+    `DzineCanvasEditor` builds the callback — and the vendored editor never invokes it. Everything
+    looked wired. Nothing was. When you are told a subsystem works, check that something *calls* it:
+    `document.fonts.size` plus one grep for a consumer would have found this a session earlier.
+31. **Verifying an endpoint is not verifying the feature.** The Tier 4 note in §5 says the fonts were
+    confirmed: 22 families served, TTF magic bytes, `access-control-allow-origin: *`. All true, and
+    all about `GET /fonts` — a response the browser threw away. The check that matters asks what the
+    *user* sees. Same shape as gotcha 28: verify the outcome, not the plumbing.
+32. **Do not cache a negative that depends on data you have not received yet.** The font loader kept
+    `family -> promise<loaded>` in a module-level map. A text layer rendering before `/fonts`
+    answered found nothing in the catalogue, cached "this family does not exist" for the life of the
+    page, and never retried. Latent all session; HMR exposed it by resetting module state. When a
+    miss is remembered, remember *why*, and clear it when the reason goes away.
+33. **Check `window.innerWidth` before debugging a click that "does not work".** Below 900px the app
+    puts the sidebar panel at `position: fixed; top: 0; bottom: 0` — over the tab rail, the canvas and
+    the header. The browser was still 825px wide from an earlier resize, so a full-screen template
+    panel swallowed every click, and its thumbnails (full-size in that layout) looked like a layout
+    bug. It was the responsive breakpoint, and it cost a lot of this session's verification time.
+
 Test data in the library: `Portraitdfsfe` (used for testing),
 `Square` (created while reproducing the table bug — safe to delete).
+A design may be left showing the **Conflict** banner: the QR work inserted layers while the server had
+a newer version, so "Keep my version" / "Use their version" is waiting on the welcome page for
+`Starter D-Zine Canvas`. `Portrait` and `Starter D-Zine Canvas` were both touched during font
+verification (a text layer was switched to Caveat and a heading preset added).
 
 ---
 
@@ -554,15 +575,57 @@ Test data in the library: `Portraitdfsfe` (used for testing),
 - Also fixed here: `textColor` no longer disappears on insert (gotcha 28), and the two private copies
       of the colour converter are now one shared `colorToHex` (gotcha 27).
 
-### New — found while doing Tier 6: third-party font origins (not scheduled)
-- **`src/constant/data.ts` and `src/constant/text-effects.ts` still load fonts from
-  `lidojs-fonts.s3.us-east-2.amazonaws.com`** (22 references) and one from `fonts.gstatic.com`.
-  These are someone else's buckets. Tier 4 removed the *googleapis* calls but these were missed, and
-  they are the same class of problem: if the bucket goes, every text effect and several templates
-  fall back to a system font. The local catalogue from Tier 4 (`api/data/fonts.json`, 22 families /
-  71 TrueType faces, served from `/api/fonts` with CORS) is the obvious replacement — and note the
-  editor still cannot decompress woff2, so the replacements must be `.ttf` (gotcha 22).
-- Not a crash, so it does not block anything; worth doing before this is handed to a client.
+### Fonts, end to end — ✅ DONE
+Asked for as "make fonts work"; the finding was that they never had. Tier 4 built the supply side
+(`/fonts`, a 22-family catalogue, a `getFonts` callback) and there was no consumer: **no font-family
+picker existed at all**, `document.fonts` held one family (the shell's Nunito), and the vendored editor
+declares `getFonts` in its config type and never calls it. Every text layer rendered as
+`fontFamily ?? 'Nunito, sans-serif'`, and the preset families were decorative.
+
+- [x] **The files are ours now.** `scripts/fetch-fonts.mjs` downloads all 76 faces into
+      `api/data/fonts/` and rewrites the catalogue to `/fonts/files/<name>`; `GET /fonts/files/:name`
+      serves them with `font/ttf` and a one-year immutable cache, matched against a strict pattern
+      rather than joined onto the directory (a font name is a path segment from the client, and `../`
+      is the obvious thing to try). Verified: 400 on traversal, 404 on unknown, `00 01 00 00` magic,
+      86 KB for Oswald. The catalogue has **zero** non-local urls.
+- [x] **Faces are registered on demand.** `src/utils/fonts.ts` registers a family's `FontFace` objects
+      the first time a layer asks for it — `new FontFace()` fetches nothing until `load()`, so a
+      design only downloads the faces it uses. Verified: Oswald, Agdasima, Caveat and Roboto all
+      resolve with their own metrics (measured widths 254.1 / 196.4 / distinct / distinct against a
+      303.9 fallback), and every layer reports `data-font-ready="true"`.
+- [x] **A font picker exists**: a floating toolbar for text layers (family, size, colour, alignment),
+      anchored like the QR and table toolbars. Family is chosen from the catalogue, so anything
+      selectable provably has a file. Verified end to end: switching a layer to Caveat updated the
+      computed style, registered both faces and fetched `caveat-regular.ttf` + `caveat-bold.ttf` from
+      our API. A layer naming a family the catalogue lacks stays selectable rather than being
+      silently rewritten.
+- [x] **The shell font is local.** `index.html` no longer preconnects to Google or loads a
+      render-blocking stylesheet from it; Nunito's 7 faces are in `public/assets/fonts/` (275 KB of
+      woff2, fetched by `scripts/fetch-shell-font.mjs`) declared as `@font-face` in the document head.
+      Verified: the welcome page renders in Nunito and the whole app makes **zero** requests to
+      `googleapis`, `gstatic` or `amazonaws`.
+- [x] **The dead third-party origins are gone.** `scripts/strip-preset-font-urls.mjs` removed the
+      seven `fonts: [...]` blocks from the presets (22 `lidojs-fonts.s3…` urls and one
+      `fonts.gstatic.com`). Nothing read them, so they were never a runtime dependency — but they
+      shipped in the bundle and were copied into every design started from a preset, advertising a
+      font source that was not in use.
+- [x] Agdasima, Acme and Akatab were added to the catalogue: the sample pages, text effects and table
+      presets name them, and a family that is asked for but absent renders in the fallback for no
+      visible reason.
+
+**Known gaps from this work**
+- **Bold and italic do nothing on a text layer.** The renderer draws `extractText(props.doc)` as a
+  single string, so the marks the presets carry are ignored — which is why the new toolbar offers only
+  the block attributes. Table cells *do* honour marks, so the intent is there; making text layers
+  render runs would mean rendering the doc properly. Until then, `/texts` presets that differ only by
+  weight look identical.
+- The design catalogue is TrueType (11.6 MB) because the editor was assumed to parse glyphs. It
+  actually renders text through CSS, and the shell font proves woff2 works — switching the catalogue
+  would cut ~8 MB of binaries.
+- `GET /api/designs/:id/thumb` fails with `net::ERR_BLOCKED_BY_ORB` for some saved designs (the
+  request is served with a type the browser refuses to sniff). Two of the seven designs on the welcome
+  page show no thumbnail. Pre-existing, unrelated to fonts, and worth a look.
+
 
 ### Tier 7 — differentiators
 - [ ] Magic resize (change canvas size, rescale/reflow layers) — Canva's killer feature.

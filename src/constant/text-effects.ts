@@ -50,47 +50,6 @@ export const addAHeading = {
         },
         scale: 1,
         rotate: 0,
-        fonts: [
-          {
-            name: 'Roboto',
-            fonts: [
-              {
-                style: 'Bold',
-                urls: [
-                  'https://lidojs-fonts.s3.us-east-2.amazonaws.com/Roboto/Roboto-Bold.woff2',
-                ],
-              },
-              {
-                style: 'Bold_Italic',
-                urls: [
-                  'https://lidojs-fonts.s3.us-east-2.amazonaws.com/Roboto/Roboto-Bold.woff2',
-                ],
-              },
-              {
-                style: 'Bold',
-                urls: [
-                  'https://lidojs-fonts.s3.us-east-2.amazonaws.com/Roboto/Roboto-Bold.woff2',
-                ],
-              },
-              {
-                urls: [
-                  'https://lidojs-fonts.s3.us-east-2.amazonaws.com/Roboto/Roboto-Regular.woff2',
-                ],
-              },
-              {
-                style: 'Italic',
-                urls: [
-                  'https://lidojs-fonts.s3.us-east-2.amazonaws.com/Roboto/Roboto-Regular.woff2',
-                ],
-              },
-              {
-                urls: [
-                  'https://lidojs-fonts.s3.us-east-2.amazonaws.com/Roboto/Roboto-Regular.woff2',
-                ],
-              },
-            ],
-          },
-        ],
         colors: ['rgb(0, 0, 0)'],
         fontSizes: [68],
       },
@@ -153,47 +112,6 @@ export const addASubheading = {
         },
         scale: 1,
         rotate: 0,
-        fonts: [
-          {
-            name: 'Roboto',
-            fonts: [
-              {
-                style: 'Bold',
-                urls: [
-                  'https://lidojs-fonts.s3.us-east-2.amazonaws.com/Roboto/Roboto-Bold.woff2',
-                ],
-              },
-              {
-                style: 'Bold_Italic',
-                urls: [
-                  'https://lidojs-fonts.s3.us-east-2.amazonaws.com/Roboto/Roboto-Bold.woff2',
-                ],
-              },
-              {
-                style: 'Bold',
-                urls: [
-                  'https://lidojs-fonts.s3.us-east-2.amazonaws.com/Roboto/Roboto-Bold.woff2',
-                ],
-              },
-              {
-                urls: [
-                  'https://lidojs-fonts.s3.us-east-2.amazonaws.com/Roboto/Roboto-Regular.woff2',
-                ],
-              },
-              {
-                style: 'Italic',
-                urls: [
-                  'https://lidojs-fonts.s3.us-east-2.amazonaws.com/Roboto/Roboto-Regular.woff2',
-                ],
-              },
-              {
-                urls: [
-                  'https://lidojs-fonts.s3.us-east-2.amazonaws.com/Roboto/Roboto-Regular.woff2',
-                ],
-              },
-            ],
-          },
-        ],
         colors: ['rgb(0, 0, 0)'],
         fontSizes: [38],
       },
@@ -253,47 +171,6 @@ export const addABodyText = {
         },
         scale: 1,
         rotate: 0,
-        fonts: [
-          {
-            name: 'Roboto',
-            fonts: [
-              {
-                style: 'Bold',
-                urls: [
-                  'https://lidojs-fonts.s3.us-east-2.amazonaws.com/Roboto/Roboto-Bold.woff2',
-                ],
-              },
-              {
-                style: 'Bold_Italic',
-                urls: [
-                  'https://lidojs-fonts.s3.us-east-2.amazonaws.com/Roboto/Roboto-Bold.woff2',
-                ],
-              },
-              {
-                style: 'Bold',
-                urls: [
-                  'https://lidojs-fonts.s3.us-east-2.amazonaws.com/Roboto/Roboto-Bold.woff2',
-                ],
-              },
-              {
-                urls: [
-                  'https://lidojs-fonts.s3.us-east-2.amazonaws.com/Roboto/Roboto-Regular.woff2',
-                ],
-              },
-              {
-                style: 'Italic',
-                urls: [
-                  'https://lidojs-fonts.s3.us-east-2.amazonaws.com/Roboto/Roboto-Regular.woff2',
-                ],
-              },
-              {
-                urls: [
-                  'https://lidojs-fonts.s3.us-east-2.amazonaws.com/Roboto/Roboto-Regular.woff2',
-                ],
-              },
-            ],
-          },
-        ],
         colors: ['rgb(0, 0, 0)'],
         fontSizes: [26],
       },

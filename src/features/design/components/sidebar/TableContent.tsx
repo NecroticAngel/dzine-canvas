@@ -974,34 +974,6 @@ const tableLayer = {
         },
       },
     ],
-    fonts: [
-      {
-        name: 'Acme',
-        fonts: [
-          {
-            urls: [
-              'https://fonts.gstatic.com/s/acme/v25/RrQfboBx-C5_bx3Lb23lzLk.ttf',
-            ],
-          },
-        ],
-      },
-      {
-        name: 'Akatab',
-        fonts: [
-          {
-            style: 'Bold',
-            urls: [
-              'https://fonts.gstatic.com/s/akatab/v7/VuJzdNrK3Z7gqJE3gKLdPKNiaRpFvg.ttf',
-            ],
-          },
-          {
-            urls: [
-              'https://fonts.gstatic.com/s/akatab/v7/VuJwdNrK3Z7gqJEPWIz5NIh-YA.ttf',
-            ],
-          },
-        ],
-      },
-    ],
   },
 };
 
