@@ -421,9 +421,25 @@ Test data in the library: `Portraitdfsfe` (used for testing),
 - [ ] Add `/api/frames`, `/api/graphics`, `/api/images`, `/api/fonts` endpoints (or bundle
       curated local assets). Until then, Frame / Graphic / Image can never populate.
 
-### Tier 5 — export upgrades
-- [ ] Currently PNG/JPEG only. Add: multipage PDF, SVG, 2×/3× scale, transparent background,
-      export-selected-layer-only.
+### Tier 5 — export upgrades — ✅ MOSTLY DONE
+- [x] **SVG** export (`toSvg`), alongside PNG/JPG/PDF/JSON.
+- [x] **1× / 2× / 3× scale**, chosen in the export menu. 2× was previously hard-coded.
+- [x] **Transparent background** for PNG and SVG (omitted for JPG, which has no alpha channel, and
+      the menu passes `transparent: false` there rather than pretending).
+- [x] **Multi-page output**: "All pages" writes one file per page (`name-1.svg`, `name-2.svg`) and
+      builds a genuine multi-page PDF instead of only ever exporting the active page.
+- [x] Verified against the real module in a browser: `t.svg`, `t-1.svg` + `t-2.svg`, and a `t.pdf`
+      blob for two pages; 1× vs 3× PNG differ by the expected amount; and decoding both PNGs shows
+      the corner pixel is `rgba(255,255,255,255)` opaque against `rgba(0,0,0,0)` transparent at the
+      same 800×400 (200×100 at 2×).
+- [ ] **Export selected layer only** — still open, and it needs more than a menu entry: the vendored
+      layer renderer writes no `data-layer-id` (the only such attribute in the codebase is
+      `data-selected-cell`, for table cells), so there is no way to find a layer's DOM node from its
+      id. Either patch the layer package to stamp an id, or crop the captured page to the selection's
+      bounding box, which needs the editor to expose the box it already computes internally
+      (`layerBoxes`).
+- Note: a multi-page PDF places every page at the active page's size. Designs whose pages share one
+      size — the normal case — are exact.
 
 ### Tier 6 — QR polish
 - [ ] Replace the 3 misleading panel thumbnails (`public/assets/images/qr-code/{1,2,3}.png` still

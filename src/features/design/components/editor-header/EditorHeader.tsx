@@ -20,8 +20,10 @@ import {
   type SyncStatus,
 } from '../../../../utils/designLibrary';
 import {
+  EXPORT_SCALES,
   exportDesign,
   type ExportFormat,
+  type ExportScale,
 } from '../../../../utils/exportDesign';
 import { ThemeToggle, useAppTheme } from '../../../../shared/theme';
 
@@ -39,6 +41,7 @@ const EXPORT_OPTIONS: { format: ExportFormat; label: string; hint: string }[] =
   [
     { format: 'png', label: 'PNG', hint: 'Image' },
     { format: 'jpg', label: 'JPG', hint: 'Image' },
+    { format: 'svg', label: 'SVG', hint: 'Vector' },
     { format: 'pdf', label: 'PDF', hint: 'Document' },
     { format: 'json', label: 'JSON', hint: 'Editable backup' },
   ];
@@ -88,6 +91,9 @@ const EditorHeaderForwardRef: ForwardRefRenderFunction<
   const { mode, toggleMode } = useAppTheme();
   const [saveState, setSaveState] = useState<'idle' | 'saved'>('idle');
   const [exportOpen, setExportOpen] = useState(false);
+  const [exportScale, setExportScale] = useState<ExportScale>(2);
+  const [exportTransparent, setExportTransparent] = useState(false);
+  const [exportAllPages, setExportAllPages] = useState(false);
   const [filesOpen, setFilesOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [nameDialog, setNameDialog] = useState<NameDialogState | null>(null);
@@ -172,6 +178,10 @@ const EditorHeaderForwardRef: ForwardRefRenderFunction<
         pageSize,
         pages: query.serialize(),
         fileName: base,
+        scale: exportScale,
+        // JPEG has no alpha channel, so the toggle would be a lie there.
+        transparent: exportTransparent && format !== 'jpg',
+        allPages: exportAllPages,
       });
     } catch (error) {
       console.error(error);
@@ -774,7 +784,82 @@ const EditorHeaderForwardRef: ForwardRefRenderFunction<
             {exporting ? 'Exporting…' : 'Export'}
           </div>
           {exportOpen && (
-            <div css={{ ...menuPanelCss, minWidth: 180 }}>
+            <div css={{ ...menuPanelCss, minWidth: 210 }}>
+              <div
+                css={{
+                  padding: '8px 12px 6px',
+                  fontSize: 11,
+                  letterSpacing: '0.06em',
+                  textTransform: 'uppercase',
+                  color: '#9aa0b5',
+                  fontWeight: 700,
+                }}
+              >
+                Scale
+              </div>
+              <div
+                css={{
+                  display: 'flex',
+                  gap: 6,
+                  padding: '0 12px 10px',
+                }}
+              >
+                {EXPORT_SCALES.map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setExportScale(value)}
+                    css={{
+                      flexGrow: 1,
+                      padding: '6px 0',
+                      borderRadius: 7,
+                      cursor: 'pointer',
+                      fontSize: 13,
+                      fontWeight: 700,
+                      border: '1px solid #3a3a4c',
+                      background: exportScale === value ? '#3d8eff' : 'transparent',
+                      color: exportScale === value ? '#fff' : 'inherit',
+                    }}
+                  >
+                    {value}×
+                  </button>
+                ))}
+              </div>
+              <label
+                css={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '6px 12px',
+                  fontSize: 13,
+                  cursor: 'pointer',
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={exportTransparent}
+                  onChange={(event) => setExportTransparent(event.target.checked)}
+                />
+                Transparent background
+              </label>
+              <label
+                css={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '6px 12px 10px',
+                  fontSize: 13,
+                  cursor: 'pointer',
+                  borderBottom: '1px solid #3a3a4c',
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={exportAllPages}
+                  onChange={(event) => setExportAllPages(event.target.checked)}
+                />
+                All pages
+              </label>
               {EXPORT_OPTIONS.map((option) => (
                 <button
                   key={option.format}
