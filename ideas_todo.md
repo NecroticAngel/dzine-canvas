@@ -455,12 +455,20 @@ Test data in the library: `Portraitdfsfe` (used for testing),
 - [ ] Share links: read-only view via the existing `GET /api/designs/:id`.
 
 ### Deferred cleanups
-- [ ] `actions.addPage()` still creates **1640×924** pages regardless of the design's actual size.
+- [x] `actions.addPage()` now matches the design: it takes the size from the page you are on instead
+      of appending a fixed 1640×924. Verified in the browser — adding a page to a 1080×1350 design
+      produced another 1080×1350, where it used to hand you a landscape page and quietly make the
+      design mixed-size.
 - [x] The axios interceptor is honest now (Phase 1): it only rewrites our own relative-API failures,
       requires an error `code`, always re-throws, and raises a blocking notice for 401/403.
-- [ ] `EditorHeader`'s theme toggle lost the old `@media (max-width: 900px) { display: none }` rule.
-- [ ] Remove the `NecroZine_Next` root from the workspace.
-- [ ] Consider theming `DrawContent`'s hard-coded geometry.
+- [x] `EditorHeader`'s theme toggle is hidden below 900px again, as the old rule did before it was
+      lost; the same toggle is on the welcome page, and the editor header needs the room.
+- [ ] Remove the `NecroZine_Next` root from the workspace — that lives in the editor's workspace
+      file, not this repo.
+- [ ] Consider theming `DrawContent`'s hard-coded geometry (`left: 72`, `top: 44`, `120×250`). Purely
+      cosmetic: it anchors over the selection, so it does not follow restyling.
+- [ ] The two junk 0×0 draw layers already saved into a design are still there. Invisible and
+      zero-sized; a load-time sweep is not worth the risk of removing something meaningful.
 
 ---
 

@@ -224,12 +224,15 @@ const bootstrapEditor = () => {
   };
 };
 
-const createBlankPage = (): SerializedPage => ({
+const createBlankPage = (size?: PageSize): SerializedPage => ({
   layers: {
     ROOT: {
       type: { resolvedName: 'RootLayer' },
       props: {
-        boxSize: { width: 1640, height: 924 },
+        boxSize: {
+          width: size?.width ?? 1640,
+          height: size?.height ?? 924,
+        },
         position: { x: 0, y: 0 },
         rotate: 0,
         color: 'rgb(255, 255, 255)',
@@ -2354,7 +2357,11 @@ export const Editor = ({
       },
       addPage: () => {
         flushTextDraft();
-        const next = [...clonePages(pagesRef.current), createBlankPage()];
+        // A new page matches the design it is going into. This used to append a
+        // fixed 1640×924 page, so adding a page to a portrait design handed you
+        // a landscape one and the design quietly became mixed-size.
+        const size = pageSizeOf(pagesRef.current[activePageRef.current]);
+        const next = [...clonePages(pagesRef.current), createBlankPage(size)];
         commit(next);
         setSelectedLayerIds([]);
         setEditingLayerId(null);

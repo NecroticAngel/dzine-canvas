@@ -878,7 +878,11 @@ const EditorHeaderForwardRef: ForwardRefRenderFunction<
             </div>
           )}
         </div>
-        <ThemeToggle />
+        {/* Hidden on narrow screens: the same toggle is on the welcome page, and
+            the editor header needs the room for the canvas controls. */}
+        <div css={{ '@media (max-width: 900px)': { display: 'none' } }}>
+          <ThemeToggle />
+        </div>
         <div
           css={{
             cursor: 'pointer',
