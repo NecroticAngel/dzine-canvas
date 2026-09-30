@@ -275,7 +275,7 @@ owns, so a client can never mutate what we shared.
    and the vendored editor barely change. Introduce one `resolveTenant(req)` seam so Phase 1 swaps
    only that function.
 5. Migrate any existing `localStorage` library into the account on first login (one-shot, idempotent).
-6. Debounced autosave + dirty indicator (Tier 3 from `ideas_todo.md`).
+6. Debounced autosave + dirty indicator (Tier 3 from `App_Overview.md`).
 
 ### Phase 3 — sharing — ✅ DONE, all items (see Progress above)
 Tenant admin vs member roles, `template_grants`, an admin surface to publish and share, and
@@ -293,7 +293,7 @@ Also fixed: the pending-op queue is persisted, so a reload inside the 800 ms deb
 an operation (a lost delete used to come back on the next hydrate).
 
 Still open: nothing structural. The remaining work is editor-facing (Tier 4/5/6/7 in
-`ideas_todo.md`) rather than multi-tenant wiring.
+`App_Overview.md`) rather than multi-tenant wiring.
 
 **Conflict handling — DONE.** `designs.version` is bumped on every write and returned by the read
 endpoints. A save that quotes an older version is refused with `409 version-conflict` plus the
