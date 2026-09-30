@@ -403,6 +403,14 @@ before you trust an `Invoke-RestMethod` assertion.
     authorisation — the route was fine, the path lookup was not. A 500 where a 404 was expected is a
     signal that the code assumed a precondition nobody documented.
 
+36. **Keyboard events do not reach the page in the integrated browser.** `page.keyboard.press('Control+z')`
+    dispatches nothing — a `window.addEventListener('keydown', …)` installed from `page.evaluate` recorded
+    zero events for a press, and it explains an earlier Escape that appeared to do nothing. Every shortcut
+    (Ctrl+Z/Y, Ctrl+C/V, Esc, Shift+R/G) therefore has to be verified some other way: click the control
+    that calls the same action, or read the handler. The editor's undo/redo are icons in the header with
+    no label, reachable in the DOM as the two children of the group immediately before the GitHub link,
+    and their `opacity` reports `canUndo`/`canRedo` — which is how the brand applies were proved undoable.
+
 Test data in the library: `Portraitdfsfe` (used for testing),`Square` (created while reproducing the table bug — safe to delete).
 A design may be left showing the **Conflict** banner: the QR work inserted layers while the server had
 a newer version, so "Keep my version" / "Use their version" is waiting on the welcome page for
