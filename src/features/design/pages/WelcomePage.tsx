@@ -675,12 +675,39 @@ export const WelcomePage = ({ onOpenDesign }: WelcomePageProps) => {
                     position: 'relative',
                   }}
                 >
-                  {design.thumbnail || design.thumbUrl ? (
+                  {/*
+                    The placeholder goes underneath rather than in an else: a
+                    preview whose file has gone missing would otherwise leave an
+                    empty box and a broken-image icon, which looks like a bug in
+                    the design rather than a design with no preview.
+                  */}
+                  <div
+                    css={{
+                      position: 'absolute',
+                      inset: 18,
+                      borderRadius: 8,
+                      background: '#fff',
+                      boxShadow: 'var(--app-canvas-shadow)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: '#9aa0b5',
+                      fontSize: 12,
+                      fontWeight: 700,
+                      letterSpacing: '0.04em',
+                    }}
+                  >
+                    CANVAS
+                  </div>
+                  {(design.thumbnail || design.thumbUrl) && (
                     <img
                       alt={`${design.name} preview`}
                       // A design created on another machine has no local data
                       // URL, so fall back to the preview the server keeps.
                       src={design.thumbnail ?? design.thumbUrl}
+                      onError={(event) => {
+                        event.currentTarget.style.display = 'none';
+                      }}
                       css={{
                         position: 'absolute',
                         inset: 18,
@@ -696,25 +723,6 @@ export const WelcomePage = ({ onOpenDesign }: WelcomePageProps) => {
                         boxShadow: 'var(--app-canvas-shadow)',
                       }}
                     />
-                  ) : (
-                    <div
-                      css={{
-                        position: 'absolute',
-                        inset: 18,
-                        borderRadius: 8,
-                        background: '#fff',
-                        boxShadow: 'var(--app-canvas-shadow)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        color: '#9aa0b5',
-                        fontSize: 12,
-                        fontWeight: 700,
-                        letterSpacing: '0.04em',
-                      }}
-                    >
-                      CANVAS
-                    </div>
                   )}
                 </button>
                 <div

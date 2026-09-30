@@ -276,6 +276,23 @@ const absoluteUrl = (req, pathname) => {
 };
 
 /**
+ * A thumbnail URL, but only when there is a file behind it.
+ *
+ * A row can name a thumbnail whose file has gone — a pruned data directory, a
+ * design copied from a template whose preview was never written. Advertising the
+ * URL anyway hands the browser a 404 whose body is JSON, and for an `<img>` that
+ * surfaces as `net::ERR_BLOCKED_BY_ORB`: no picture, and an error name that says
+ * nothing about the cause. No file means no URL, and the client draws its
+ * "no preview" tile instead of asking for something that is not there.
+ */
+const thumbUrlFor = (req, kind, row, thumbsDir) => {
+  if (!row?.thumbPath) return null;
+  const file = path.join(thumbsDir, path.basename(row.thumbPath));
+  if (!existsSync(file)) return null;
+  return absoluteUrl(req, `/${kind}/${encodeURIComponent(row.id)}/thumb`);
+};
+
+/**
  * A URL for the application itself, rather than for an API resource.
  *
  * `absoluteUrl` deliberately points inside `/api`, which is right for a
@@ -1086,9 +1103,7 @@ api.post('/templates/:id/use', (req, res) => {
     updatedAt: now,
     version: 1,
     fromTemplateId: id,
-    thumbUrl: thumbPath
-      ? absoluteUrl(req, `/designs/${encodeURIComponent(designId)}/thumb`)
-      : null,
+    thumbUrl: thumbUrlFor(req, 'designs', { id: designId, thumbPath }, paths.thumbsDir),
   });
 });
 
@@ -1100,9 +1115,12 @@ api.get('/admin/templates', requireAdmin, (req, res) => {
       name: row.name,
       scope: row.scope,
       tenantId: row.tenantId,
-      thumbUrl: row.thumbPath
-        ? absoluteUrl(req, `/templates/${encodeURIComponent(row.id)}/thumb`)
-        : null,
+      thumbUrl: thumbUrlFor(
+        req,
+        'templates',
+        row,
+        templateThumbDir(templateDirFor(row.scope, row.tenantId)),
+      ),
       grants: row.scope === 'global' ? listTemplateGrants(db, row.id) : [],
     })),
   );
@@ -1162,7 +1180,7 @@ api.get('/admin/audit', requireAdmin, (req, res) => {
 
 /** Designs */
 api.get('/designs', (req, res) => {
-  const { designsDir, userId } = pathsFor(req);
+  const { designsDir, thumbsDir, userId } = pathsFor(req);
   ensureTenant(db, userId);
   adoptOrphanDesigns(db, userId, designsDir);
   // One indexed query — the old version parsed every design file in full.
@@ -1173,9 +1191,7 @@ api.get('/designs', (req, res) => {
       updatedAt: row.updatedAt,
       version: row.version,
       userId,
-      thumbUrl: row.thumbPath
-        ? absoluteUrl(req, `/designs/${encodeURIComponent(row.id)}/thumb`)
-        : null,
+      thumbUrl: thumbUrlFor(req, 'designs', row, thumbsDir),
     })),
   );
 });
@@ -1250,9 +1266,7 @@ api.put('/designs/:id', (req, res) => {
         name: existing.name,
         updatedAt: existing.updatedAt,
         version: existing.version,
-        thumbUrl: existing.thumbPath
-          ? absoluteUrl(req, `/designs/${encodeURIComponent(existing.id)}/thumb`)
-          : null,
+        thumbUrl: thumbUrlFor(req, 'designs', existing, thumbsDir),
       },
     });
     return;
@@ -1293,9 +1307,7 @@ api.put('/designs/:id', (req, res) => {
     name,
     updatedAt: now,
     version,
-    thumbUrl: thumbPath
-      ? absoluteUrl(req, `/designs/${encodeURIComponent(id)}/thumb`)
-      : null,
+    thumbUrl: thumbUrlFor(req, 'designs', { id, thumbPath }, thumbsDir),
   });
 });
 
@@ -1347,9 +1359,7 @@ api.post('/designs', (req, res) => {
     name,
     updatedAt: now,
     version: 1,
-    thumbUrl: thumbPath
-      ? absoluteUrl(req, `/designs/${encodeURIComponent(id)}/thumb`)
-      : null,
+    thumbUrl: thumbUrlFor(req, 'designs', { id, thumbPath }, thumbsDir),
   });
 });
 

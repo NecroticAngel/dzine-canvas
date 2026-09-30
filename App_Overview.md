@@ -905,6 +905,34 @@ on `readOnly` so a viewer gets no drag cursor — the write is protected regardl
 patch goes through the same `setPages` a read-only editor replaces with a no-op, but that particular
 cursor was not exercised in a viewer.
 
+### Design previews — how they are made, and the two ways one goes missing
+A thumbnail is captured **in the browser** on every save and uploaded with the design
+(`captureThumbnail` → `setDesignThumbnail`), deliberately not awaited: a failed capture must never
+surface as a failed save. A design started from a template instead inherits the template's own preview
+file, which is an SVG, so the thumbs directory holds both JPEG captures and SVG placeholders.
+
+- [x] **A thumbnail URL is only advertised when there is a file behind it.** `thumbUrlFor` checks the
+      disk first, for designs and templates alike. Without that check, a row naming a thumbnail whose
+      file had gone handed the browser a 404 whose body is JSON, and for an `<img>` Chrome reports
+      that as `net::ERR_BLOCKED_BY_ORB` — a name that says nothing about the cause and hides the real
+      one. Verified by hiding one valid file: 19/21 → 18/21 thumb URLs, that design's `thumbUrl`
+      became null, and the route itself answered 404 (which is what an `<img>` used to be handed).
+- [x] **The ORB explanation this was recorded under was wrong, and worth not restoring.** Every
+      advertised thumbnail loads, cross-origin SVG included: 19/19, with `naturalWidth` 320 for the SVG
+      template previews and 420 for the JPEG captures. The "two designs show no preview" symptom was
+      real but had a different cause, below.
+- [x] **A preview that fails to load now reveals the placeholder instead of leaving an empty box.**
+      The card draws its "CANVAS" tile underneath and hides a preview whose image errors. Verified by
+      pointing one at a 404 for real: the image went `display: none` and the placeholder underneath
+      stayed visible at 211px, while the untouched cards still painted their previews over it.
+
+**The remaining way to have no preview is a save made while the tab is hidden.** `captureThumbnail`
+needs an animation frame and a background tab never runs one, so the capture is skipped and the design
+is saved without one — which is how two designs in the library came to have none, both created in
+background tabs while this work was being verified. It self-heals on the next save in a visible tab,
+and a fresh design edited in the foreground gets its preview end to end (verified: `image/jpeg`,
+4964 bytes).
+
 ### Cleanups completed
 - [x] `actions.addPage()` now matches the design: it takes the size from the page you are on instead
       of appending a fixed 1640×924. Verified in the browser — adding a page to a 1080×1350 design

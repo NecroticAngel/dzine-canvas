@@ -12,8 +12,8 @@
 ## Nothing queued
 
 The feature backlog is empty: grid snapping and layout guides were the last two items, and both are
-done (see `App_Overview.md`). What is left is the list below — the failing thumbnails are the only
-entry with a visible symptom.
+done (see `App_Overview.md`). What is left is the list below. None of it shows up as a symptom in
+normal use.
 
 ## Smaller debts
 
@@ -30,10 +30,6 @@ entry with a visible symptom.
 
 ## Known issues
 
-- [ ] **Some design thumbnails fail with `net::ERR_BLOCKED_BY_ORB`.** `GET /api/designs/:id/thumb` is
-      served with a type the browser refuses to sniff, so two of the seven designs on the welcome page
-      show no preview. Pre-existing and unrelated to any recent work, but it is the only one here with
-      a visible symptom.
 - [ ] **The font catalogue is TrueType, 11.6 MB.** The editor was assumed to parse glyphs; it actually
       renders text through CSS, and the locally-hosted shell font proves woff2 works. Switching the
       catalogue would cut roughly 8 MB of binaries.
@@ -81,7 +77,7 @@ work end to end out of our own API, and text marks render. Dev mode still needs 
 
 Next, in order:
 1. Nothing is queued — the feature backlog is empty. Take whichever of the smaller debts and known
-   issues looks most valuable; the failing thumbnails are the only one with a visible symptom.
+   issues looks most valuable; none of them shows up as a symptom in normal use.
 
 Verify in the real browser, not just tsc, and read the §4 gotchas before writing browser tests — two of
 them (39: requestAnimationFrame never fires in a hidden tab; 33: the 900px responsive breakpoint) will
