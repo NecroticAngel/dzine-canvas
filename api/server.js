@@ -14,7 +14,7 @@ import {
 } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import {
   getStoragePaths,
   storageConfig,
@@ -24,6 +24,7 @@ import {
 import {
   countAssets,
   createInvite,
+  createShareLink,
   deleteAsset,
   deleteDesign,
   deleteInvite,
@@ -47,8 +48,11 @@ import {
   listTemplatesForTenant,
   listTenants,
   liveDesignCount,
+  liveShareLink,
   openDatabase,
   recordAudit,
+  resolveShareToken,
+  revokeDesignShareLinks,
   revokeTemplateGrant,
   upsertAsset,
   upsertDesign,
@@ -122,9 +126,37 @@ const identity = createIdentityMiddleware(db);
 
 // The container probe and the endpoint index stay reachable without credentials;
 // everything else resolves an identity first.
-const PUBLIC_ROUTES = new Set(['/health', '/']);
+//
+// `/fonts` is the catalogue the share view needs in order to register the faces
+// a design names; without it an anonymous reader gets fallback type and no
+// indication why. It is a fixed list of open-licensed families, so there is
+// nothing in it that belongs to a tenant.
+const PUBLIC_ROUTES = new Set(['/health', '/', '/fonts']);
+/**
+ * Path prefixes that must work without an identity.
+ *
+ * A share link is opened by someone with no account — that is what it is for —
+ * so the request that serves it cannot require credentials. Everything under
+ * here is therefore responsible for its own authorisation, which in this case
+ * means the token being the only thing that identifies the design.
+ *
+ * The asset catalogue and the font files are here for a different reason: a
+ * design stores the absolute URL of every frame, graphic and font it uses, so a
+ * shared design cannot render unless those URLs are readable without
+ * credentials. Both catalogues are global — the assets table says so, and the
+ * fonts are a fixed list of open-licensed families — so there is no tenant data
+ * to protect, and the files ship inside the application anyway. Note the
+ * trailing slashes: they admit `/assets/<id>/content` and `/fonts/files/<name>`
+ * while leaving the `/assets` listing, the admin routes and `/fonts` itself
+ * behind authentication.
+ */
+const PUBLIC_PREFIXES = ['/shared/', '/assets/', '/fonts/files/'];
+const isPublicPath = (requestPath) =>
+  PUBLIC_ROUTES.has(requestPath) ||
+  PUBLIC_PREFIXES.some((prefix) => requestPath.startsWith(prefix));
+
 api.use((req, res, next) => {
-  if (PUBLIC_ROUTES.has(req.path)) {
+  if (isPublicPath(req.path)) {
     // Resolved opportunistically: /health answers container probes without
     // credentials but shows detail to a signed-in administrator, so a failure
     // here must not reject the request.
@@ -239,6 +271,19 @@ const absoluteUrl = (req, pathname) => {
   const origin = `${req.protocol}://${req.get('host')}`;
   const assetPath = pathname.startsWith('/') ? pathname : `/${pathname}`;
   return `${origin}${BASE_PATH}/api${assetPath}`;
+};
+
+/**
+ * A URL for the application itself, rather than for an API resource.
+ *
+ * `absoluteUrl` deliberately points inside `/api`, which is right for a
+ * thumbnail a client will fetch and wrong for a link a human will paste into a
+ * browser — that has to land on the app, at whatever base path it is served from.
+ */
+const appUrl = (req, pathname) => {
+  const origin = `${req.protocol}://${req.get('host')}`;
+  const relative = pathname.startsWith('/') ? pathname : `/${pathname}`;
+  return `${origin}${BASE_PATH}${relative}`;
 };
 
 const isSerializedPage = (value) =>
@@ -1326,7 +1371,113 @@ api.delete('/designs/:id', (req, res) => {
     targetId: row.id,
     detail: { name: row.name },
   });
+  // A tombstoned design would otherwise leave its links looking live, and the
+  // public path would have to distinguish "revoked" from "deleted".
+  revokeDesignShareLinks(db, row.id);
   res.status(204).end();
+});
+
+/* --- Share links ---------------------------------------------------------
+ * A read-only link to one design, for somebody with no account. Creating one
+ * requires the design, which means it requires an identity and the tenant the
+ * design belongs to; opening one requires only the token.
+ *
+ * The token is 24 random bytes, base64url — the same length as a session
+ * identifier, and the only thing standing between the public internet and a
+ * client's design. Nothing in the response lets a holder find anything else.
+ * --------------------------------------------------------------------- */
+
+/** 24 bytes of base64url: 32 characters, not enumerable. */
+const SHARE_TOKEN_PATTERN = /^[A-Za-z0-9_-]{32}$/;
+const newShareToken = () => randomBytes(24).toString('base64url');
+
+api.post('/designs/:id/share', writeLimit, (req, res) => {
+  const { userId } = pathsFor(req);
+  ensureTenant(db, userId);
+  const id = safeId(req.params.id);
+  const row = getDesign(db, userId, id);
+  if (!row) {
+    res.status(404).json({ error: 'Design not found' });
+    return;
+  }
+
+  // One live link per design, not one per click: the dialog shows the link that
+  // exists rather than quietly invalidating what was already sent to someone.
+  const live = liveShareLink(db, id);
+  if (live) {
+    res.json({ token: live.token, url: appUrl(req, `/?share=${live.token}`), createdAt: live.createdAt });
+    return;
+  }
+
+  const token = newShareToken();
+  const createdAt = Date.now();
+  createShareLink(db, {
+    token,
+    designId: id,
+    tenantId: userId,
+    createdAt,
+    createdBy: req.identity.member.id,
+  });
+  audit(req, {
+    action: 'share.create',
+    targetType: 'design',
+    targetId: id,
+    detail: { name: row.name },
+  });
+  res.status(201).json({ token, url: appUrl(req, `/?share=${token}`), createdAt });
+});
+
+api.delete('/designs/:id/share', writeLimit, (req, res) => {
+  const { userId } = pathsFor(req);
+  const id = safeId(req.params.id);
+  const row = getDesign(db, userId, id);
+  if (!row) {
+    res.status(404).json({ error: 'Design not found' });
+    return;
+  }
+  const revoked = revokeDesignShareLinks(db, id);
+  if (revoked) {
+    audit(req, {
+      action: 'share.revoke',
+      targetType: 'design',
+      targetId: id,
+      detail: { name: row.name, links: revoked },
+    });
+  }
+  res.json({ revoked });
+});
+
+/**
+ * The public read. No identity, no session — the token is the whole request.
+ *
+ * `no-store` because a withdrawn link must stop working immediately; a shared
+ * cache or a browser holding a copy would keep serving it afterwards.
+ */
+api.get('/shared/:token', readLimit, (req, res) => {
+  const token = String(req.params.token ?? '');
+  // Shape check before the lookup, so junk never reaches the index.
+  if (!SHARE_TOKEN_PATTERN.test(token)) {
+    res.status(404).json({ error: 'This link is not available' });
+    return;
+  }
+
+  const link = resolveShareToken(db, token);
+  const row = link ? getDesign(db, link.tenantId, link.designId) : null;
+  const pages = row
+    ? readDesignPayload(getStoragePaths(link.tenantId).designsDir, row.id)
+    : null;
+  if (!link || !row || !pages) {
+    res.status(404).json({ error: 'This link is not available' });
+    return;
+  }
+
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({
+    name: row.name,
+    updatedAt: row.updatedAt,
+    sharedAt: link.createdAt,
+    pages,
+  });
 });
 
 /** Uploads */
@@ -1615,8 +1766,20 @@ api.get('/assets', (req, res) => {
 
 api.get('/assets/:id/content', (req, res) => {
   const asset = getAsset(db, safeId(req.params.id));
-  const filePath = asset ? assetFilePath(pathsFor(req), asset) : null;
-  if (!asset || !filePath || !existsSync(filePath)) {
+  /**
+   * This route is public, so there may be no identity to derive a storage root
+   * from — `pathsFor` reads one and would throw. An admin publishing artwork
+   * writes into their own tenant's directory, so prefer that when the caller has
+   * a tenant and fall back to the packaged root, which is where the shipped
+   * catalogue lives and what a share link will be reaching for.
+   */
+  const filePath = asset
+    ? [
+        ...(req.identity ? [assetFilePath(pathsFor(req), asset)] : []),
+        assetFilePath(bootPaths, asset),
+      ].find((candidate) => existsSync(candidate)) ?? null
+    : null;
+  if (!asset || !filePath) {
     res.status(404).json({ error: 'Asset not found' });
     return;
   }

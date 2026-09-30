@@ -241,7 +241,7 @@ with them, and creates its own designs. Decisions already taken: orgs with multi
   parse and written from another, so it was discarded and the banner never appeared. See gotcha 19.
 
 **Next**
-1. Tier 7 differentiators (magic resize, brand kit, share links).
+1. Tier 7 continued: brand kit, then magic resize. Share links are done.
 2. Render text layers properly, so bold and italic marks work and `/texts` presets stop looking
    identical (see the gaps list under the font work).
 3. Export selected-layer-only, which needs the layer renderer to stamp an id.
@@ -392,8 +392,18 @@ before you trust an `Invoke-RestMethod` assertion.
     panel swallowed every click, and its thumbnails (full-size in that layout) looked like a layout
     bug. It was the responsive breakpoint, and it cost a lot of this session's verification time.
 
-Test data in the library: `Portraitdfsfe` (used for testing),
-`Square` (created while reproducing the table bug — safe to delete).
+34. **A public route has to be public *all the way down*.** The share endpoint was reachable without
+    credentials immediately, but the *design* was not: layer props hold absolute URLs, and fonts and
+    library artwork were both behind authentication. An anonymous reader got a correct-looking page
+    with fallback type and broken frames. Verifying the new route in isolation would have passed.
+    The test that finds this is to run an instance with `AUTH_MODE=headers` and request every URL the
+    page will touch with no credentials — private routes answer 401, so the list is unambiguous.
+35. **Ask what a handler needs, not just whether it is authorised.** `GET /assets/:id/content` threw
+    a 500 for an identity-less caller because it derived a storage root from one. It was never about
+    authorisation — the route was fine, the path lookup was not. A 500 where a 404 was expected is a
+    signal that the code assumed a precondition nobody documented.
+
+Test data in the library: `Portraitdfsfe` (used for testing),`Square` (created while reproducing the table bug — safe to delete).
 A design may be left showing the **Conflict** banner: the QR work inserted layers while the server had
 a newer version, so "Keep my version" / "Use their version" is waiting on the welcome page for
 `Starter D-Zine Canvas`. `Portrait` and `Starter D-Zine Canvas` were both touched during font
@@ -632,7 +642,48 @@ declares `getFonts` in its config type and never calls it. Every text layer rend
 - [ ] Brand kit (saved palette + fonts).
 - [x] "Save as template" exists (Phase 3): `POST /templates` with a `sourceDesignId`, and a client's
       templates are private to its tenant. An admin can publish a shared one.
-- [ ] Share links: read-only view via the existing `GET /api/designs/:id`.
+- [x] **Share links** — a read-only URL to one design, for somebody with no account.
+
+### Share links — ✅ DONE
+The one grant in the system that does not require a login, because the recipient is a client's
+customer and will never have one.
+
+- [x] `share_links` table: token, design, tenant, created/created_by, `revoked_at`. Revoking is an
+      update, not a delete — a record that a link existed and was withdrawn is worth more than the row.
+- [x] `POST /designs/:id/share` (idempotent: **one live link per design**, so the dialog shows the link
+      that exists rather than silently invalidating the copy already sent to someone), `DELETE` to
+      revoke all of a design's links, and `GET /shared/:token` as the public read. The token is 24
+      random bytes, base64url — the whole request, so it is the one thing an attacker can guess.
+      A revoked, deleted and never-existed token all answer 404 with the same body: telling them apart
+      would let a guess be confirmed.
+- [x] The viewer (`?share=<token>`) mounts the **real editor with `readOnly`**, so a recipient sees the
+      design rather than a re-implementation of it. Read-only is enforced at the three state setters
+      that carry every change rather than at each of the forty-odd actions that reach them — a pointer
+      handler can call whatever it likes and nothing moves. `persistCurrent` is the choke point for
+      saving, so a viewer cannot write to the library or upload.
+- [x] The app has no router, so a share link is `?share=<token>` on the app itself. The client builds
+      the copied URL from its own origin, not from the API's answer: in development the app and the API
+      are on different ports, and the API's canonical URL would render nothing.
+- [x] The share dialog sits in the editor header next to Preview, with copy and revoke, and explains
+      what the link does.
+
+**Public surface.** Opening a shared design needs more than the design: the pages reference fonts and
+library artwork by absolute URL. Verified on an instance with `AUTH_MODE=headers`, where every
+private route answers 401:
+
+| public | private |
+|---|---|
+| `/shared/<token>`, `/fonts`, `/fonts/files/<name>`, `/assets/<id>/content`, `/health` | `/designs`, `/templates`, `/audit`, `/members`, `/uploads`, `/assets` (listing), `/admin/assets` |
+
+Both catalogues are global by design — the assets table says so, and the fonts are a fixed list of
+open-licensed families — so no tenant data is exposed. The trailing slashes matter: `/assets/` admits
+content while leaving the listing and the admin routes behind authentication.
+
+**Found while verifying, both fixed:** `GET /assets/:id/content` answered **500** for a caller with no
+identity, because it derived a storage root from one (`pathsFor` → `tenantOf` → throw). It now prefers
+the caller's directory and falls back to the packaged root. And the font files were still behind
+authentication, so a shared design would have rendered in fallback faces with nothing to indicate why.
+
 
 ### Deferred cleanups
 - [x] `actions.addPage()` now matches the design: it takes the size from the page you are on instead

@@ -1,52 +1,39 @@
 'use client';
 
-import type { FontData } from '@lidojs/design-core';
-import axios from 'axios';
-import { useEffect, useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useFontCatalogue } from '../../../shared/hooks/useFontCatalogue';
 import { DzineCanvasEditor } from '../components';
-import { setFontCatalogue } from '../../../utils/fonts';
+import { SharedPage } from './SharedPage';
 import { WelcomePage } from './WelcomePage';
 
 export const DesignPage = () => {
   const [view, setView] = useState<'welcome' | 'editor'>('welcome');
   const [editorKey, setEditorKey] = useState(0);
-  const [googleFontList, setGoogleFontList] = useState<FontData[]>([]);
+  const googleFontList = useFontCatalogue();
 
-  useEffect(() => {
-    const getFont = async () => {
-      // The catalogue comes from our own API. It used to be fetched straight
-      // from Google with `process.env.FONT_API_KEY`, which Vite does not inline,
-      // so the request went out as `key=undefined` and answered 403 — leaving
-      // the font list empty and a permanent 403 in the console.
-      const data = await axios
-        .get<{ fonts?: FontData[] }>('/fonts')
-        .catch(() => ({ data: { fonts: [] } }));
-      // The shared axios interceptor rewrites every failed GET into `{ data: [] }`,
-      // so a rejection never reaches the `.catch` above and the payload can be an
-      // array where an object was expected. Never trust the shape.
-      const list = Array.isArray(data?.data?.fonts) ? data.data.fonts : [];
-      const usable = list.filter((font) => font?.name && font.fonts?.length);
-      setGoogleFontList(usable);
-      // The loader needs the same catalogue: nothing else knows which files a
-      // family name maps to, and without this a layer naming Oswald renders in
-      // the fallback.
-      setFontCatalogue(usable);
-    };
-    void getFont();
+  /**
+   * A share link is `?share=<token>` on the app itself, because the app has no
+   * router: the whole interface is state inside this component, and a design is
+   * opened by clicking rather than by URL. A query parameter is the smallest
+   * thing that makes a link work, and it keeps every existing path intact.
+   */
+  const shareToken = useMemo(() => {
+    const value = new URLSearchParams(window.location.search).get('share');
+    return value?.trim() || null;
   }, []);
 
-  if (view === 'welcome') {
-    return (
-      <WelcomePage
-        onOpenDesign={() => {
-          setEditorKey((key) => key + 1);
-          setView('editor');
-        }}
-      />
-    );
+  if (shareToken) {
+    return <SharedPage token={shareToken} />;
   }
 
-  return (
+  return view === 'welcome' ? (
+    <WelcomePage
+      onOpenDesign={() => {
+        setEditorKey((key) => key + 1);
+        setView('editor');
+      }}
+    />
+  ) : (
     <DzineCanvasEditor
       key={editorKey}
       googleFontList={googleFontList}

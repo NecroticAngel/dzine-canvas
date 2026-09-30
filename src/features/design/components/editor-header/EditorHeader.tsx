@@ -26,6 +26,7 @@ import {
   type ExportScale,
 } from '../../../../utils/exportDesign';
 import { ThemeToggle, useAppTheme } from '../../../../shared/theme';
+import { ShareDialog } from '../share';
 
 interface HeaderLayoutProps {
   openPreview: () => void;
@@ -97,6 +98,7 @@ const EditorHeaderForwardRef: ForwardRefRenderFunction<
   const [filesOpen, setFilesOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [nameDialog, setNameDialog] = useState<NameDialogState | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
   const nameInputRef = useRef<HTMLInputElement>(null);
 
@@ -907,6 +909,30 @@ const EditorHeaderForwardRef: ForwardRefRenderFunction<
         </div>
         <div
           css={{
+            cursor: 'pointer',
+            color: '#fff',
+            fontWeight: 700,
+            background: '#3a3a4c',
+            padding: '8px 14px',
+            borderRadius: 8,
+            ':hover': {
+              background: 'rgba(58,58,76,0.5)',
+            },
+            '@media (max-width: 900px)': {
+              display: 'none',
+            },
+          }}
+          title="Give someone a read-only link to this design"
+          onClick={() => {
+            setFilesOpen(false);
+            setExportOpen(false);
+            setShareOpen(true);
+          }}
+        >
+          Share
+        </div>
+        <div
+          css={{
             display: 'flex',
             alignItems: 'center',
             color: '#fff',
@@ -930,6 +956,13 @@ const EditorHeaderForwardRef: ForwardRefRenderFunction<
           Preview
         </div>
       </div>
+      {shareOpen && (
+        <ShareDialog
+          designId={currentDesign?.id ?? ''}
+          designName={currentDesign?.name ?? 'Untitled'}
+          onClose={() => setShareOpen(false)}
+        />
+      )}
       {nameDialog && (
         <div
           role="presentation"

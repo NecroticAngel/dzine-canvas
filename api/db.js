@@ -128,6 +128,29 @@ CREATE TABLE IF NOT EXISTS assets (
   created_by TEXT
 );
 CREATE INDEX IF NOT EXISTS assets_by_category ON assets(category, name COLLATE NOCASE);
+
+-- Read-only links to a single design.
+--
+-- This is the one grant in the system that does not require an account, which is
+-- the entire point of it: a share link goes to a client's customer, who will
+-- never sign in. The token is therefore the only credential, and it is the one
+-- thing an attacker can guess — so it is 24 random bytes, and nothing about the
+-- design is discoverable from it.
+--
+-- Revoking sets revoked_at rather than deleting the row: a record that a link
+-- existed and was withdrawn is worth more than the space. tenant_id is copied
+-- in so a lookup can find the right storage root without joining, which keeps
+-- the public path a single indexed read.
+CREATE TABLE IF NOT EXISTS share_links (
+  token       TEXT PRIMARY KEY,
+  design_id   TEXT NOT NULL REFERENCES designs(id) ON DELETE CASCADE,
+  tenant_id   TEXT NOT NULL,
+  created_at  INTEGER NOT NULL,
+  created_by  TEXT,
+  revoked_at  INTEGER
+);
+CREATE INDEX IF NOT EXISTS share_links_by_design
+  ON share_links(design_id, revoked_at);
 `;
 
 /** Open (creating if needed) the metadata database under the storage root. */
@@ -252,6 +275,57 @@ export const liveDesignCount = (db, tenantId) =>
       'SELECT count(*) AS c FROM designs WHERE tenant_id = ? AND deleted_at IS NULL',
     )
     .get(tenantId).c;
+
+/* --- Share links --------------------------------------------------------
+ * See the table comment. These are the only rows reachable without an identity.
+ * --------------------------------------------------------------------- */
+
+export const createShareLink = (db, record) => {
+  db
+    .prepare(
+      `INSERT INTO share_links (token, design_id, tenant_id, created_at, created_by, revoked_at)
+       VALUES (?, ?, ?, ?, ?, NULL)`,
+    )
+    .run(
+      record.token,
+      record.designId,
+      record.tenantId,
+      record.createdAt,
+      record.createdBy ?? null,
+    );
+};
+
+/** A live link for one design, if there is one — links are per design, not per click. */
+export const liveShareLink = (db, designId) =>
+  db
+    .prepare(
+      `SELECT token, design_id AS designId, tenant_id AS tenantId,
+              created_at AS createdAt
+         FROM share_links
+        WHERE design_id = ? AND revoked_at IS NULL
+        ORDER BY created_at DESC
+        LIMIT 1`,
+    )
+    .get(designId) ?? null;
+
+/** The design a token points at, or null if unknown or revoked. */
+export const resolveShareToken = (db, token) =>
+  db
+    .prepare(
+      `SELECT token, design_id AS designId, tenant_id AS tenantId,
+              created_at AS createdAt
+         FROM share_links
+        WHERE token = ? AND revoked_at IS NULL`,
+    )
+    .get(token) ?? null;
+
+/** Withdraw every live link for a design; returns how many were live. */
+export const revokeDesignShareLinks = (db, designId) =>
+  db
+    .prepare(
+      'UPDATE share_links SET revoked_at = ? WHERE design_id = ? AND revoked_at IS NULL',
+    )
+    .run(Date.now(), designId).changes;
 
 /* --- Members ------------------------------------------------------------
  * One row per human login. `external_id` is the IdP subject claim; email is

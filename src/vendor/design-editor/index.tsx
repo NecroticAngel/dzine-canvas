@@ -82,6 +82,12 @@ type EditorState = {
   dragNDrop: unknown;
   /** True while there are edits autosave has not persisted yet. */
   dirty: boolean;
+  /**
+   * The editor refuses every change. Consumers need this for the *appearance* of
+   * immutability: the mutations are already no-ops, but a control that silently
+   * does nothing is worse than one that is not offered.
+   */
+  readOnly: boolean;
 };
 
 /** Identifies one cell of a TableLayer by its 1-based row/col index. */
@@ -2281,24 +2287,73 @@ const PageCanvas = ({ page }: { page?: SerializedPage }) => {
   return <LayerView layerId="ROOT" layers={page.layers} />;
 };
 
+/**
+ * The editing surface.
+ *
+ * `initialPages` and `readOnly` exist for the share view, which renders somebody
+ * else's design with no account and no way to change it. Both are opt-in: with
+ * neither set, the editor boots from the local library exactly as before.
+ */
 export const Editor = ({
   children,
+  initialPages,
+  initialName,
+  readOnly = false,
 }: {
   config?: unknown;
   getFonts?: (query: GetFontQuery) => Promise<unknown>;
   uploadImage?: (file: File) => Promise<{ url: string; thumb: string }>;
   children?: ReactNode;
+  /** Open these pages instead of the local library. */
+  initialPages?: SerializedPage[];
+  /** Display name for `initialPages`. */
+  initialName?: string;
+  /** Refuse every change: no selection, no edits, no saving. */
+  readOnly?: boolean;
 }) => {
-  const boot = useRef(bootstrapEditor()).current;
-  const [pages, setPages] = useState<SerializedPage[]>(boot.pages);
+  const boot = useRef(
+    initialPages
+      ? {
+          pages: clonePages(initialPages),
+          currentDesign: {
+            // Never a real id: nothing may resolve this back to a design the
+            // viewer could then try to load or overwrite.
+            id: 'shared-preview',
+            name: initialName?.trim() || 'Shared design',
+            updatedAt: Date.now(),
+          } satisfies DesignSummary,
+          designs: [],
+        }
+      : bootstrapEditor(),
+  ).current;
+  const [pages, setPagesState] = useState<SerializedPage[]>(boot.pages);
   const [activePage, setActivePage] = useState(0);
   const [scale, setScale] = useState(0.43);
   const [sidebar, setSidebarState] = useState<string | undefined>();
-  const [selectedLayerIds, setSelectedLayerIds] = useState<string[]>([]);
-  const [editingLayerId, setEditingLayerId] = useState<string | null>(null);
+  const [selectedLayerIds, setSelectedLayerIdsState] = useState<string[]>([]);
+  const [editingLayerId, setEditingLayerIdState] = useState<string | null>(null);
   const [selectedCell, setSelectedCell] = useState<TableCellRef | null>(null);
   const [guides, setGuides] = useState<SnapGuide[]>([]);
   const [dirty, setDirty] = useState(false);
+  /**
+   * Read-only is enforced at the three setters that carry every change, rather
+   * than at each of the forty-odd actions that reach them.
+   *
+   * All content mutations end at `setPages`, and all selection and text entry
+   * end at the other two, so refusing at these points is what makes the rest of
+   * the editor safe to leave untouched: a pointer handler can call whatever it
+   * likes and nothing moves. Gating each action instead would be a long list to
+   * keep complete, and the one that got missed would be the bug.
+   */
+  const setPages = readOnly
+    ? (() => undefined) as Dispatch<SetStateAction<SerializedPage[]>>
+    : setPagesState;
+  const setSelectedLayerIds = readOnly
+    ? (() => undefined) as Dispatch<SetStateAction<string[]>>
+    : setSelectedLayerIdsState;
+  const setEditingLayerId = readOnly
+    ? (() => undefined) as Dispatch<SetStateAction<string | null>>
+    : setEditingLayerIdState;
   // Measurement aids, restored from the last session.
   const bootView = useRef(readCanvasView()).current;
   const [showRulers, setShowRulers] = useState(bootView.showRulers ?? false);
@@ -2306,6 +2361,10 @@ export const Editor = ({
   const [gridSize, setGridSize] = useState(bootView.gridSize ?? 20);
 
   useEffect(() => {
+    // A reader of a shared design gets no say in the owner's editor settings:
+    // the preference is stored under the same origin, so writing it here would
+    // change what the owner sees next time they open the editor.
+    if (readOnly) return;
     try {
       localStorage.setItem(
         CANVAS_VIEW_KEY,
@@ -2314,7 +2373,7 @@ export const Editor = ({
     } catch {
       // A browser that refuses storage just loses the preference.
     }
-  }, [showRulers, showGrid, gridSize]);
+  }, [showRulers, showGrid, gridSize, readOnly]);
   const [currentDesign, setCurrentDesign] = useState<DesignSummary | null>(
     boot.currentDesign,
   );
@@ -2380,6 +2439,10 @@ export const Editor = ({
   }, []);
 
   const persistCurrent = useCallback(() => {
+    // The choke point for saving. Every caller — autosave, Save, switching
+    // design, importing — passes through here, so a read-only viewer cannot
+    // write to the library or upload, whichever route it reaches from.
+    if (readOnly) return null;
     flushTextDraft();
     const saved = saveActiveDesignPages(pagesRef.current);
     if (saved) {
@@ -2408,7 +2471,7 @@ export const Editor = ({
       }
     }
     return saved;
-  }, [flushTextDraft, refreshDesignList]);
+  }, [flushTextDraft, refreshDesignList, readOnly]);
 
   /** Any change to the pages means there is something autosave has to persist. */
   const markDirty = useCallback(() => setDirty(true), []);
@@ -2464,13 +2527,15 @@ export const Editor = ({
    * must never happen under the caret. The flush on blur/Escape restarts it.
    */
   useEffect(() => {
-    if (!dirty || editingLayerId) return;
+    // `persistCurrent` refuses in read-only too; this only avoids arming a timer
+    // that could never do anything.
+    if (readOnly || !dirty || editingLayerId) return;
     const timer = window.setTimeout(() => {
       persistCurrent();
       setDirty(false);
     }, AUTOSAVE_DELAY);
     return () => window.clearTimeout(timer);
-  }, [dirty, editingLayerId, pages, persistCurrent]);
+  }, [dirty, editingLayerId, pages, persistCurrent, readOnly]);
 
   /** Commit a shallow patch onto a layer's props — undoable and saved. */
   const patchLayerProps = useCallback(
@@ -3018,6 +3083,7 @@ export const Editor = ({
       designs,
       guides,
       dirty,
+      readOnly,
       actions,
       query,
     }),
@@ -3029,6 +3095,7 @@ export const Editor = ({
       dirty,
       editingLayerId,
       guides,
+      readOnly,
       selectedCell,
       pages,
       query,
@@ -3074,6 +3141,7 @@ export function useEditor<
         selectedLayerIds: ctx.selectedLayerIds,
         dragNDrop: ctx.dragNDrop,
         dirty: ctx.dirty,
+        readOnly: ctx.readOnly,
       })
     : ({} as T);
   return {
@@ -3087,6 +3155,7 @@ export function useEditor<
     currentDesign: ctx.currentDesign,
     designs: ctx.designs,
     dirty: ctx.dirty,
+    readOnly: ctx.readOnly,
   };
 }
 
@@ -3849,7 +3918,7 @@ const AlignToolbar = () => {
 };
 
 export const PageControl = () => {
-  const { pages, activePage, scale, actions } = useEditor();
+  const { pages, activePage, scale, actions, readOnly } = useEditor();
   const scaleCtx = useContext(EditorScaleContext);
   const view = useContext(CanvasViewContext);
   return (
@@ -3864,9 +3933,13 @@ export const PageControl = () => {
       }}
     >
       <div css={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-        <button type="button" onClick={() => actions.addPage()}>
-          Add Page
-        </button>
+        {/* Paging is useful to a viewer; adding a page is not, and in read-only
+            the action is a no-op anyway. */}
+        {!readOnly && (
+          <button type="button" onClick={() => actions.addPage()}>
+            Add Page
+          </button>
+        )}
         <button
           type="button"
           disabled={activePage <= 0}
