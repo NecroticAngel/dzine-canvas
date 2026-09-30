@@ -421,6 +421,15 @@ before you trust an `Invoke-RestMethod` assertion.
     easy to break and trivial to check: any transform that computes a new centre has to reproduce the
     original coordinates exactly at ratio 1. It is the cheapest guard against a whole class of
     drift-in-by-a-few-pixels bugs, and it caught the centring rule I nearly shipped.
+39. **`requestAnimationFrame` never fires in a background tab, so never make it load-bearing.** Every
+    floating toolbar anchored itself to the canvas with a rAF loop whose only job was to measure a
+    bounding rect, and each of them returned `null` until the first frame ran. A hidden tab suspends
+    rAF outright, so *no toolbar appeared at all* — I found it by counting ticks inside a timeout and
+    getting **zero**, with `document.visibilityState` reading `"hidden"` (`page.bringToFront()` does
+    not change that in this harness). I had spent a while suspecting a regression in my own edits
+    before measuring the thing I had assumed was working. The fix is one synchronous measurement on
+    selection change, with rAF used only to *follow* a moving layer: a frame is an optimisation, and
+    anything the user can see must not depend on one arriving.
 
 Test data in the library: `Portraitdfsfe` (used for testing),`Square` (created while reproducing the table bug — safe to delete).
 A design may be left showing the **Conflict** banner: the QR work inserted layers while the server had
@@ -778,6 +787,33 @@ content while leaving the listing and the admin routes behind authentication.
 identity, because it derived a storage root from one (`pathsFor` → `tenantOf` → throw). It now prefers
 the caller's directory and falls back to the packaged root. And the font files were still behind
 authentication, so a shared design would have rendered in fallback faces with nothing to indicate why.
+
+
+### Text marks — ✅ DONE
+Text layers rendered `extractText(doc)`: one flat string. Every `bold`/`italic` mark in the saved data
+was already there and already ignored, which is why the presets in `text-effects.ts` that differ only
+by weight looked identical, and why table cells (which did honour marks) were the odd one out.
+
+- [x] `TextDocView` renders the document instead of flattening it — a `<div>` per block, so a
+      multi-line layer keeps its own alignment, colour and size per line, and a `<span>` per inline
+      node, applying `bold` → 700, `italic` → `font-style`, `underline` → `text-decoration` and a
+      `color` mark → `color`. Anything a mark does not set falls back to the layer's own attrs.
+- [x] `actions.setTextMarks(layerId, { bold?, italic? })` rewrites only the marks it was asked about,
+      so toggling italic off cannot strip bold. Verified: bold off → 400, bold on → 700, then italic
+      on → 700 *and* italic.
+- [x] Bold/Italic buttons in `TextToolbar`, immediately before the family select. `aria-pressed` is
+      true only when **every** inline node carries the mark, so a half-marked layer reads as not-all-set
+      rather than showing whichever node happened to be first.
+- [x] Their titles say "applies to the whole text box" because the text input is a plain textarea:
+      there is no range to apply a mark to, and a button that looks range-aware without being it is
+      worse than one that is plain about its scope.
+- [x] Verified in the browser against a **saved** design: the heading preset arrives at weight 700 with
+      Bold pressed, toggling writes `{"type":"bold"}`/`{"type":"italic"}` into the stored design
+      (read back from `/api/designs/:id`), and a newly inserted "Add a heading" renders at 700.
+
+Verifying this turned up gotcha 39. Fixing it collapsed five copies of the same anchor loop into one
+`useAnchor` hook, which is why `CellToolbar`, `TextToolbar`, `QrToolbar`, `DrawToolbar` and
+`AlignToolbar` are each about twenty-five lines shorter.
 
 
 ### Deferred cleanups

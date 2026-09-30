@@ -184,6 +184,17 @@ type EditorActions = {
    * a multi-line layer keeps one family and one colour throughout.
    */
   updateTextAttrs: (layerId: string, patch: Record<string, unknown>) => void;
+  /**
+   * Set an inline mark across a whole text layer.
+   *
+   * There is no range selection — the editor's text input is a plain textarea —
+   * so the layer is the only honest granularity. Other marks are preserved, so
+   * bolding a line does not drop its colour.
+   */
+  setTextMarks: (
+    layerId: string,
+    patch: { bold?: boolean; italic?: boolean },
+  ) => void;
   setSelectedCell: (cell: TableCellRef | null) => void;
   updateTableCell: (
     layerId: string,
@@ -653,6 +664,89 @@ const buildTextDoc = (existingDoc: unknown, text: string) => {
 };
 
 const HANDLE_SIZE = 10;
+
+type TextDocMark = { type?: string; attrs?: Record<string, unknown> };
+type TextDocInline = { type?: string; text?: string; marks?: TextDocMark[] };
+// Named apart from `TextBlock`, which is the table cell's own block type.
+type TextDocBlock = {
+  type?: string;
+  attrs?: Record<string, unknown>;
+  content?: TextDocInline[];
+};
+
+/**
+ * Render a text layer's document, honouring the marks it carries.
+ *
+ * This used to draw `extractText(doc)` — one flat string — which threw away the
+ * only in-line formatting the document can express. Every preset that says a line
+ * is bold or italic was drawn as if it had not, so two presets differing only by
+ * weight were indistinguishable on the canvas.
+ *
+ * Blocks are lines: the document builds one paragraph per line, and an empty one
+ * has to keep its line box or blank lines collapse.
+ */
+const TextDocView = ({
+  doc,
+  attrs,
+}: {
+  doc: unknown;
+  attrs: Record<string, unknown>;
+}) => {
+  const blocks = (doc as { content?: TextDocBlock[] } | undefined)?.content;
+  if (!Array.isArray(blocks) || !blocks.length) {
+    return <div>{extractText(doc)}</div>;
+  }
+
+  return (
+    <>
+      {blocks.map((block, blockIndex) => {
+        // Per-block attributes win over the layer's, so a document with a
+        // differently aligned line keeps it. `buildTextDoc` copies the same
+        // attributes onto every line, so this only shows up in imported content.
+        const blockAttrs = block.attrs ?? attrs;
+        const lineHeight = Number(
+          blockAttrs.lineHeight ?? attrs.lineHeight ?? 1.2,
+        );
+        return (
+          <div
+            key={blockIndex}
+            style={{
+              // A paragraph with no content still occupies a line, the way the
+              // newline it replaced did.
+              minHeight: `${lineHeight}em`,
+              textAlign:
+                (blockAttrs.textAlign as CSSProperties['textAlign']) ??
+                (attrs.textAlign as CSSProperties['textAlign']),
+              color: String(blockAttrs.color ?? attrs.color ?? '#111'),
+              fontSize: String(blockAttrs.fontSize ?? attrs.fontSize ?? '24px'),
+            }}
+          >
+            {(block.content ?? []).map((node, nodeIndex) => {
+              const marks = Array.isArray(node.marks) ? node.marks : [];
+              const has = (type: string) =>
+                marks.some((mark) => mark.type === type);
+              const markColour = marks.find((mark) => mark.type === 'color')
+                ?.attrs?.color;
+              const style: CSSProperties = {};
+              if (has('bold')) style.fontWeight = 700;
+              if (has('italic')) style.fontStyle = 'italic';
+              if (has('underline')) style.textDecoration = 'underline';
+              if (markColour) style.color = String(markColour);
+              return (
+                <span
+                  key={nodeIndex}
+                  style={Object.keys(style).length ? style : undefined}
+                >
+                  {node.text ?? ''}
+                </span>
+              );
+            })}
+          </div>
+        );
+      })}
+    </>
+  );
+};
 
 /**
  * Error correction, as a share of the code recoverable if it is damaged.
@@ -1326,7 +1420,15 @@ const LayerView = ({
         );
       }
 
-      return <div style={textStyle}>{extractText(props.doc)}</div>;
+      return (
+        <div style={textStyle}>
+          {/* Full width, so `textAlign` decides where the text sits rather than
+              the flex centring of the box. */}
+          <div style={{ width: '100%' }}>
+            <TextDocView doc={props.doc} attrs={attrs} />
+          </div>
+        </div>
+      );
     }
 
     if (name === 'ImageLayer' || name === 'FrameLayer') {
@@ -1746,6 +1848,56 @@ const TableCellView = ({
 
 const FONT_SIZES = ['12px', '14px', '16px', '18px', '20px', '24px', '28px', '32px', '40px', '48px'];
 
+type Anchor = { top: number; left: number };
+
+/**
+ * Position a floating toolbar over something inside the canvas.
+ *
+ * The artboard does not paint through React, so a toolbar has to measure a
+ * real DOM node. `active` says whether there is anything to anchor to at all,
+ * and `measure` returns the toolbar's screen position — or null when the thing
+ * it was tracking has gone away.
+ *
+ * The first measurement is synchronous, because an animation frame is not
+ * guaranteed: a background tab never runs one, and a toolbar that only appears
+ * once the browser feels like painting is a toolbar that sometimes is not
+ * there. After that, one frame per repaint keeps it glued to the layer while
+ * the layer is dragged, scrolled or zoomed.
+ */
+const useAnchor = (active: boolean, measure: () => Anchor | null) => {
+  const [anchor, setAnchor] = useState<Anchor | null>(null);
+  /** Read through a ref so a changing target never restarts the loop. */
+  const measureRef = useRef(measure);
+  measureRef.current = measure;
+
+  useEffect(() => {
+    if (!active) {
+      setAnchor(null);
+      return;
+    }
+    let frame = 0;
+    let stopped = false;
+    let last = '';
+    const tick = () => {
+      if (stopped) return;
+      const next = measureRef.current();
+      const key = next ? `${Math.round(next.top)}:${Math.round(next.left)}` : '';
+      if (key !== last) {
+        last = key;
+        setAnchor(next);
+      }
+      frame = window.requestAnimationFrame(tick);
+    };
+    tick();
+    return () => {
+      stopped = true;
+      window.cancelAnimationFrame(frame);
+    };
+  }, [active]);
+
+  return anchor;
+};
+
 /**
  * Floating formatting toolbar for the selected table cell.
  *
@@ -1755,34 +1907,12 @@ const FONT_SIZES = ['12px', '14px', '16px', '18px', '20px', '24px', '28px', '32p
 const CellToolbar = () => {
   const ctx = useContext(EditorContext);
   const cell = ctx?.selectedCell ?? null;
-  const [anchor, setAnchor] = useState<{ top: number; left: number } | null>(null);
-
-  useEffect(() => {
-    if (!cell) {
-      setAnchor(null);
-      return;
-    }
-    let frame = 0;
-    let last = '';
-    const tick = () => {
-      const node = document.querySelector('[data-selected-cell="true"]');
-      const rect = node?.getBoundingClientRect();
-      const key = rect
-        ? `${Math.round(rect.top)}:${Math.round(rect.left)}:${Math.round(rect.width)}`
-        : '';
-      if (key !== last) {
-        last = key;
-        setAnchor(
-          rect
-            ? { top: rect.top, left: rect.left + rect.width / 2 }
-            : null,
-        );
-      }
-      frame = window.requestAnimationFrame(tick);
-    };
-    frame = window.requestAnimationFrame(tick);
-    return () => window.cancelAnimationFrame(frame);
-  }, [cell]);
+  const anchor = useAnchor(!!cell, () => {
+    const rect = document
+      .querySelector('[data-selected-cell="true"]')
+      ?.getBoundingClientRect();
+    return rect ? { top: rect.top, left: rect.left + rect.width / 2 } : null;
+  });
 
   if (!ctx || !cell || !anchor) return null;
 
@@ -1926,21 +2056,16 @@ const CellToolbar = () => {
  * bounding rect each frame, so it follows the layer and the zoom with no
  * coordinate maths of its own.
  *
- * It offers the block's own attributes — family, size, colour, alignment —
- * because those are the only things a text layer honours. The renderer draws
- * `extractText(props.doc)` as one string, so the `bold` and `italic` marks the
- * presets carry have no effect here; buttons for them would promise something
- * that never arrives. Table cells do honour marks, which is why their toolbar
- * has them and this one does not.
+ * It offers the block's own attributes — family, size, colour, alignment — and the
+ * two inline marks that render, bold and italic. There is no range selection (the
+ * text input is a plain textarea), so a mark applies to the whole text box, which
+ * the titles say.
  *
  * The family list is the server catalogue, which is also what the loader
  * registers faces from — so anything selectable here provably has a file.
  */
 const TextToolbar = () => {
   const ctx = useContext(EditorContext);
-  const [anchor, setAnchor] = useState<{ top: number; left: number } | null>(
-    null,
-  );
 
   const selectedIds = ctx?.selectedLayerIds ?? [];
   const id = selectedIds.length === 1 ? selectedIds[0] : null;
@@ -1949,34 +2074,18 @@ const TextToolbar = () => {
   const isText = layer?.type?.resolvedName === 'TextLayer';
   const props = (layer?.props ?? {}) as Record<string, unknown>;
   const doc = props.doc as
-    | { type?: string; content?: { attrs?: Record<string, unknown> }[] }
+    | {
+        type?: string;
+        content?: { attrs?: Record<string, unknown>; content?: TextDocInline[] }[];
+      }
     | undefined;
   const attrs = doc?.content?.[0]?.attrs ?? {};
-
-  useEffect(() => {
-    if (!isText) {
-      setAnchor(null);
-      return;
-    }
-    let frame = 0;
-    let last = '';
-    const tick = () => {
-      const node = document.querySelector('[data-text-anchor="true"]');
-      const rect = node?.getBoundingClientRect();
-      const key = rect
-        ? `${Math.round(rect.top)}:${Math.round(rect.left)}:${Math.round(rect.width)}`
-        : '';
-      if (key !== last) {
-        last = key;
-        setAnchor(
-          rect ? { top: rect.top, left: rect.left + rect.width / 2 } : null,
-        );
-      }
-      frame = window.requestAnimationFrame(tick);
-    };
-    frame = window.requestAnimationFrame(tick);
-    return () => window.cancelAnimationFrame(frame);
-  }, [isText]);
+  const anchor = useAnchor(!!isText, () => {
+    const rect = document
+      .querySelector('[data-text-anchor="true"]')
+      ?.getBoundingClientRect();
+    return rect ? { top: rect.top, left: rect.left + rect.width / 2 } : null;
+  });
 
   if (!ctx || !isText || !id || !anchor) return null;
 
@@ -1995,10 +2104,22 @@ const TextToolbar = () => {
     : [...FONT_SIZES, size].sort((a, b) => parseFloat(a) - parseFloat(b));
   const align = String(attrs.textAlign ?? 'center');
 
+  /**
+   * Whether every text node carries a mark, so the buttons show the state of the
+   * layer rather than of whichever node happened to be first.
+   */
+  const inlines = (Array.isArray(doc?.content) ? doc.content : []).flatMap(
+    (block) => block.content ?? [],
+  );
+  const everyMarked = (type: string) =>
+    inlines.length > 0 &&
+    inlines.every((node) =>
+      (node.marks ?? []).some((mark) => mark.type === type),
+    );
+
   /** Every block, so a multi-line layer keeps one family throughout. */
   const patchAttrs = (patch: Record<string, unknown>) =>
     ctx.actions.updateTextAttrs(id, patch);
-
   const controlCss = {
     height: 28,
     border: '1px solid var(--app-border)',
@@ -2008,16 +2129,17 @@ const TextToolbar = () => {
     fontSize: 12,
   } as const;
 
-  const alignCss = (value: string) => ({
+  /** Shared by the alignment and the mark buttons, which toggle the same way. */
+  const toggleCss = (active: boolean) => ({
     minWidth: 28,
     height: 28,
     padding: '0 6px',
-    border: `1px solid ${align === value ? '#3d8eff' : 'var(--app-border)'}`,
-    background: align === value ? 'rgba(61,142,255,.16)' : 'transparent',
-    color: align === value ? '#3d8eff' : 'var(--app-text-strong)',
+    border: `1px solid ${active ? '#3d8eff' : 'var(--app-border)'}`,
+    background: active ? 'rgba(61,142,255,.16)' : 'transparent',
+    color: active ? '#3d8eff' : 'var(--app-text-strong)',
     borderRadius: 6,
     cursor: 'pointer',
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: 700,
     lineHeight: 1,
   });
@@ -2041,6 +2163,39 @@ const TextToolbar = () => {
       }}
       onPointerDown={(event) => event.stopPropagation()}
     >
+      {/*
+        Whole-layer marks, and the titles say so: the text input is a plain
+        textarea, so there is no range to apply them to and pretending otherwise
+        would be worse than being plain about it.
+      */}
+      <button
+        type="button"
+        title="Bold — applies to the whole text box"
+        aria-label="Bold"
+        aria-pressed={everyMarked('bold')}
+        css={toggleCss(everyMarked('bold'))}
+        onClick={() =>
+          ctx.actions.setTextMarks(id, { bold: !everyMarked('bold') })
+        }
+      >
+        B
+      </button>
+      <button
+        type="button"
+        title="Italic — applies to the whole text box"
+        aria-label="Italic"
+        aria-pressed={everyMarked('italic')}
+        css={{
+          ...toggleCss(everyMarked('italic')),
+          fontStyle: 'italic',
+        }}
+        onClick={() =>
+          ctx.actions.setTextMarks(id, { italic: !everyMarked('italic') })
+        }
+      >
+        I
+      </button>
+      <span css={{ width: 1, height: 18, background: 'var(--app-border)' }} />
       <select
         aria-label="Font family"
         title="Font"
@@ -2087,7 +2242,7 @@ const TextToolbar = () => {
           type="button"
           aria-label={`Align ${value}`}
           title={`Align ${value}`}
-          css={alignCss(value)}
+          css={toggleCss(align === value)}
           onClick={() => patchAttrs({ textAlign: value })}
         >
           {value === 'left' ? 'L' : value === 'center' ? 'C' : 'R'}
@@ -2106,7 +2261,6 @@ const TextToolbar = () => {
  */
 const QrToolbar = () => {
   const ctx = useContext(EditorContext);
-  const [anchor, setAnchor] = useState<{ top: number; left: number } | null>(null);
   const [draft, setDraft] = useState('');
   const [exporting, setExporting] = useState(false);
   const logoInputRef = useRef<HTMLInputElement | null>(null);
@@ -2120,31 +2274,12 @@ const QrToolbar = () => {
   const level = readErrorLevel(props.errorCorrectionLevel);
   /** A logo covers modules that only `Q` and `H` keep recoverable. */
   const logoNeedsMore = !!props.logo && (level === 'L' || level === 'M');
-
-  useEffect(() => {
-    if (!isQr) {
-      setAnchor(null);
-      return;
-    }
-    let frame = 0;
-    let last = '';
-    const tick = () => {
-      const node = document.querySelector('[data-qr-anchor="true"]');
-      const rect = node?.getBoundingClientRect();
-      const key = rect
-        ? `${Math.round(rect.top)}:${Math.round(rect.left)}:${Math.round(rect.width)}`
-        : '';
-      if (key !== last) {
-        last = key;
-        setAnchor(
-          rect ? { top: rect.top, left: rect.left + rect.width / 2 } : null,
-        );
-      }
-      frame = window.requestAnimationFrame(tick);
-    };
-    frame = window.requestAnimationFrame(tick);
-    return () => window.cancelAnimationFrame(frame);
-  }, [isQr]);
+  const anchor = useAnchor(!!isQr, () => {
+    const rect = document
+      .querySelector('[data-qr-anchor="true"]')
+      ?.getBoundingClientRect();
+    return rect ? { top: rect.top, left: rect.left + rect.width / 2 } : null;
+  });
 
   // Seed the field when a different QR is selected.
   const layerText = isQr ? String(props.text ?? '') : '';
@@ -2372,7 +2507,6 @@ const buildDrawSvg = (d: string, stroke: string, strokeWidth: number) =>
 /** Floating editor for a selected freehand drawing: stroke colour and weight. */
 const DrawToolbar = () => {
   const ctx = useContext(EditorContext);
-  const [anchor, setAnchor] = useState<{ top: number; left: number } | null>(null);
   const [width, setWidth] = useState('4');
 
   const selectedIds = ctx?.selectedLayerIds ?? [];
@@ -2383,31 +2517,12 @@ const DrawToolbar = () => {
   const draw =
     layer?.type?.resolvedName === 'SvgLayer' ? parseDrawSvg(props.image) : null;
   const hasDraw = !!draw;
-
-  useEffect(() => {
-    if (!hasDraw) {
-      setAnchor(null);
-      return;
-    }
-    let frame = 0;
-    let last = '';
-    const tick = () => {
-      const node = document.querySelector('[data-draw-anchor="true"]');
-      const rect = node?.getBoundingClientRect();
-      const key = rect
-        ? `${Math.round(rect.top)}:${Math.round(rect.left)}:${Math.round(rect.width)}`
-        : '';
-      if (key !== last) {
-        last = key;
-        setAnchor(
-          rect ? { top: rect.top, left: rect.left + rect.width / 2 } : null,
-        );
-      }
-      frame = window.requestAnimationFrame(tick);
-    };
-    frame = window.requestAnimationFrame(tick);
-    return () => window.cancelAnimationFrame(frame);
-  }, [hasDraw]);
+  const anchor = useAnchor(hasDraw, () => {
+    const rect = document
+      .querySelector('[data-draw-anchor="true"]')
+      ?.getBoundingClientRect();
+    return rect ? { top: rect.top, left: rect.left + rect.width / 2 } : null;
+  });
 
   const stroke = draw?.stroke ?? '#000000';
   const strokeWidth = draw?.strokeWidth ?? 4;
@@ -2764,6 +2879,48 @@ export const Editor = ({
       commit(resizePages(pagesRef.current, size));
     },
     [commit],
+  );
+
+  /** Set an inline mark across every text node of a layer. */
+  const setTextMarks = useCallback(
+    (layerId: string, patch: { bold?: boolean; italic?: boolean }) => {
+      const page = pagesRef.current[activePageRef.current];
+      const doc = page?.layers?.[layerId]?.props?.doc as
+        | {
+            type?: string;
+            content?: {
+              attrs?: Record<string, unknown>;
+              content?: TextDocInline[];
+            }[];
+          }
+        | undefined;
+      const content = Array.isArray(doc?.content) ? doc.content : [];
+      patchLayerProps(layerId, {
+        doc: {
+          type: doc?.type ?? 'doc',
+          content: content.map((block) => ({
+            ...block,
+            content: (block.content ?? []).map((node) =>
+              node.type !== 'text'
+                ? node
+                : {
+                    ...node,
+                    marks: [
+                      ...(node.marks ?? []).filter(
+                        (mark) =>
+                          !(patch.bold !== undefined && mark.type === 'bold') &&
+                          !(patch.italic !== undefined && mark.type === 'italic'),
+                      ),
+                      ...(patch.bold ? [{ type: 'bold' }] : []),
+                      ...(patch.italic ? [{ type: 'italic' }] : []),
+                    ],
+                  },
+            ),
+          })),
+        },
+      });
+    },
+    [patchLayerProps],
   );
 
   /**
@@ -3162,6 +3319,7 @@ export const Editor = ({
       updateLayerText: patchLayerText,
       updateLayerProps: patchLayerProps,
       updateTextAttrs: patchTextAttrs,
+      setTextMarks,
       resizeDesign,
       setSelectedCell,
       updateTableCell: patchTableCell,
@@ -3294,6 +3452,7 @@ export const Editor = ({
     patchLayerProps,
     patchTextAttrs,
     resizeDesign,
+    setTextMarks,
     patchTableCell,
     persistCurrent,
     refreshDesignList,
@@ -4013,7 +4172,6 @@ const RulerStrip = ({
 const AlignToolbar = () => {
   const ctx = useContext(EditorContext);
   const scaleCtx = useContext(EditorScaleContext);
-  const [anchor, setAnchor] = useState<{ top: number; left: number } | null>(null);
 
   const selectedIds = ctx?.selectedLayerIds ?? [];
   const page = ctx ? ctx.pages[ctx.activePage] : undefined;
@@ -4046,38 +4204,19 @@ const AlignToolbar = () => {
     };
   }, [page, selectedIds]);
 
-  useEffect(() => {
-    if (!bounds || hidden) {
-      setAnchor(null);
-      return;
-    }
-    const pageIndex = ctx?.activePage ?? 0;
-    let frame = 0;
-    let last = '';
-    // Page coordinates → screen, re-measured each frame so scrolling and zooming
-    // keep the bar glued to the selection.
-    const tick = () => {
-      const node = document.getElementById(`lidojs-page-${pageIndex}`);
-      const rect = node?.getBoundingClientRect();
-      const key = rect
-        ? `${Math.round(rect.top)}:${Math.round(rect.left)}:${Math.round(scale * 1000)}`
-        : '';
-      if (key !== last) {
-        last = key;
-        setAnchor(
-          rect
-            ? {
-                top: rect.top + bounds.top * scale,
-                left: rect.left + (bounds.left + bounds.width / 2) * scale,
-              }
-            : null,
-        );
-      }
-      frame = window.requestAnimationFrame(tick);
-    };
-    frame = window.requestAnimationFrame(tick);
-    return () => window.cancelAnimationFrame(frame);
-  }, [bounds, ctx?.activePage, hidden, scale]);
+  // Page coordinates → screen, re-measured continuously so scrolling and
+  // zooming keep the bar glued to the selection.
+  const anchor = useAnchor(!!bounds && !hidden, () => {
+    const rect = document
+      .getElementById(`lidojs-page-${ctx?.activePage ?? 0}`)
+      ?.getBoundingClientRect();
+    return rect && bounds
+      ? {
+          top: rect.top + bounds.top * scale,
+          left: rect.left + (bounds.left + bounds.width / 2) * scale,
+        }
+      : null;
+  });
 
   if (!ctx || !bounds || !anchor) return null;
 
