@@ -407,6 +407,22 @@ no longer drops the operation (gotcha 18).
     down** (`checkCanvasDimensions`) rather than failing, so a large export could be smaller than the
     multiplier asked for with nothing to say why. Pass `width`/`height` and `pixelRatio`; never both a
     canvas size and a ratio.
+41. **A preset that carries fixed layer ids overwrites itself.** `text-effects.ts` gives its three
+    presets literal `rootId`s, and `addTextLayer` merged the preset's tree verbatim — so clicking
+    "Add a heading" twice produced **one** layer, the second insert landing on the first one's key.
+    Every other insert path (`addSingle`) mints a `uuid()`, and the paste path re-keys with
+    `remapLayerTree`, so this was the one door left open. It is now re-keyed like a paste. Worth
+    remembering because the failure is silent — the layer count simply does not go up — and two
+    identical headings is not an exotic thing to want.
+42. **In the integrated browser's hidden tab, `pointerdown` and `pointerup` never arrive — but
+    `pointermove` does.** A drag driven by `page.mouse` moved nothing while the window counted nine
+    moves and zero downs, and `page.bringToFront()` does not change it (gotcha 39 is the same tab
+    being `"hidden"`). Dispatching the events yourself works: a `PointerEvent('pointerdown')` with
+    `bubbles`, `cancelable` and `composed` set, dispatched on the element under the cursor, then
+    `pointermove`/`pointerup` dispatched on `window` (the editor listens for those on `window`, and
+    React picks the down up by delegation from `#root`). Read the DOM in a **later** `page.evaluate`
+    call — React has not re-rendered within the same task, so measuring immediately reports the old
+    geometry and a working drag looks exactly like a broken one.
 
 **State of the library (context, not a TODO).** Test designs have accumulated: `Portraitdfsfe` (used
 for testing), `Square` (created while reproducing the table bug), several "Blank White" copies made
@@ -515,6 +531,33 @@ product bug. Slow the drag down (~6px steps, 35 ms waits, 120 ms pause after `do
         the keyboard shortcuts round-trip in both directions, the footer buttons stay in step, and
         the preference survives a reload.
 
+### Snap to grid — ✅ DONE
+The grid used to be a measuring aid only. A **Snap** button in the footer — and Shift+S — now makes
+dragging and resizing latch onto it.
+
+- [x] **Opt-in, and independent of the grid being visible.** A grid is often switched on purely as
+      something to line up against, so snapping to it by default would have changed how every drag
+      behaves; the choice is remembered with the other view preferences.
+- [x] `computeSnap` takes an optional grid step and adds the nearest multiple of it as a candidate for
+      each of the box's three edges/centre per axis. A grid is an infinite set of lines, so unlike the
+      guide targets its candidates have to be derived from where the box actually is.
+- [x] When a grid line and a guide are both in reach the **closest wins**, with ties going to the
+      guide. Turning the grid on therefore cannot make aligning to a sibling worse than it was, and a
+      grid line three pixels nearer cannot steal a drag that is an exact match on something else.
+      Verified: aimed 1.221 px short of a sibling's left edge with the nearest grid line 3.9 away, the
+      layer landed on the sibling's edge — 525.121, which is not a multiple of 40 — while the other
+      axis, with no guide in reach, took the grid line.
+- [x] **Resizing snaps too**, on the edges the gesture is actually moving, so the anchored corner
+      cannot drift. Verified: a corner drag aimed 0.8 px short of the 1080 grid line produced exactly
+      1080, and the axis the drag did not move (dy of 0) snapped its bottom to the grid as well.
+- [x] Also verified: whole-drag latching (right edge → 1100 and bottom → 380 on a 20px grid), the
+      exact raw delta with Snap off and no guides shown, snapping while the grid is hidden, and the
+      snapped line drawn as a guide, so the pull is visible even with no grid on screen.
+
+**Found while verifying this:** inserting the same text preset twice *replaced* the first layer
+instead of adding a second — see gotcha 41. That is why these tests kept finding one layer where
+there should have been two.
+
 ### Tier 2.5 — ✅ DRAGS AND RESIZES ARE NOW UNDOABLE (`5469d8f`)
 - [x] `startInteraction` patched the page live via `updateLayerBox` → `patchLayerLive`, which
       bypasses `commit()`, so moving/resizing a layer created **no** undo entry: Ctrl+Z after a
@@ -604,6 +647,10 @@ base64 IHDR bytes rather than awaiting an `Image` (which can hang on a bad href)
 when you look. Rotating a preset temporarily is the only practical way to test a rotated layer — the
 editor has no rotate handle, and canvas clicks do not reliably select here, so a preset that *arrives*
 selected is the way in.
+
+One dead end found on the way: `withCleanCapture` hides `[data-resize-handle]`, and nothing in the DOM
+carries that attribute — deselecting before the capture is what actually keeps the handles out, and
+that CSS rule matches nothing.
 
 ### Tier 6 — QR polish — ✅ DONE
 - [x] The three misleading thumbnails are gone (`public/assets/images/qr-code/{1,2,3}.png` deleted).

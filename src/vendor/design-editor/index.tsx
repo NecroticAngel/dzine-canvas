@@ -258,6 +258,9 @@ type CanvasViewValue = {
   setShowGrid: Dispatch<SetStateAction<boolean>>;
   gridSize: number;
   setGridSize: Dispatch<SetStateAction<number>>;
+  /** Whether dragging and resizing latch onto the grid lines. */
+  snapGrid: boolean;
+  setSnapGrid: Dispatch<SetStateAction<boolean>>;
 };
 
 const CanvasViewContext = createContext<CanvasViewValue | null>(null);
@@ -275,6 +278,7 @@ const readCanvasView = (): Partial<CanvasViewValue> => {
     return {
       showRulers: parsed.showRulers === true,
       showGrid: parsed.showGrid === true,
+      snapGrid: parsed.snapGrid === true,
       gridSize: GRID_SIZES.includes(Number(parsed.gridSize))
         ? Number(parsed.gridSize)
         : 20,
@@ -1013,9 +1017,16 @@ const isDescendantOf = (
   return false;
 };
 
+/** A candidate snap: how far to move, and the line that pulled. */
+type Snap = { delta: number; line: number };
+
 /** Closest `targets` entry to any of `moving`, when within `threshold`. */
-const closestSnap = (moving: number[], targets: number[], threshold: number) => {
-  let best: { delta: number; line: number } | null = null;
+const closestSnap = (
+  moving: number[],
+  targets: number[],
+  threshold: number,
+): Snap | null => {
+  let best: Snap | null = null;
   for (const value of moving) {
     for (const target of targets) {
       const delta = target - value;
@@ -1029,12 +1040,40 @@ const closestSnap = (moving: number[], targets: number[], threshold: number) => 
 };
 
 /**
- * Snap a dragged box to the page and to its siblings.
+ * The multiples of `step` nearest each value, as snap candidates.
+ *
+ * A grid is an infinite set of lines, so unlike the guide targets it cannot be
+ * enumerated up front — the candidates have to be derived from where the box
+ * actually is.
+ */
+const gridTargets = (values: number[], step: number) =>
+  values.map((value) => Math.round(value / step) * step);
+
+/**
+ * The closest grid line to `value`, or null when it is out of reach.
+ *
+ * Used by the resize path, where the moving edges are already known and there is
+ * nothing to weigh them against but the grid.
+ */
+const nearestGridLine = (value: number, step: number, threshold: number) => {
+  const line = Math.round(value / step) * step;
+  return Math.abs(line - value) <= threshold ? line : null;
+};
+
+/**
+ * Snap a dragged box to the page, to its siblings, and to the grid.
  *
  * Candidates per axis are the leading edge, centre and trailing edge of every
  * other layer, plus the page's own edges and centre. The two axes snap
  * independently, so a drag can latch onto a vertical and a horizontal guide at
  * once.
+ *
+ * `gridStep` adds the grid lines as further candidates when it is not zero. A
+ * grid line and a guide can both be in reach, and the **closest** wins: turning
+ * the grid on should never make aligning to a sibling worse than it already was,
+ * and a grid line three pixels nearer should not steal a drag that is an exact
+ * match on something else. A tie goes to the guide, because a tie means
+ * something lines up exactly.
  */
 const computeSnap = (
   layers: SerializedLayers,
@@ -1043,6 +1082,7 @@ const computeSnap = (
   size: PageSize,
   pageSize: PageSize,
   threshold: number,
+  gridStep = 0,
 ): { position: Point; guides: SnapGuide[] } => {
   const xTargets = [0, pageSize.width / 2, pageSize.width];
   const yTargets = [0, pageSize.height / 2, pageSize.height];
@@ -1058,16 +1098,33 @@ const computeSnap = (
     yTargets.push(p.y, p.y + box.height / 2, p.y + box.height);
   }
 
-  const snapX = closestSnap(
-    [position.x, position.x + size.width / 2, position.x + size.width],
-    xTargets,
-    threshold,
-  );
-  const snapY = closestSnap(
-    [position.y, position.y + size.height / 2, position.y + size.height],
-    yTargets,
-    threshold,
-  );
+  const movingX = [
+    position.x,
+    position.x + size.width / 2,
+    position.x + size.width,
+  ];
+  const movingY = [
+    position.y,
+    position.y + size.height / 2,
+    position.y + size.height,
+  ];
+
+  const guideX = closestSnap(movingX, xTargets, threshold);
+  const guideY = closestSnap(movingY, yTargets, threshold);
+  const gridX = gridStep
+    ? closestSnap(movingX, gridTargets(movingX, gridStep), threshold)
+    : null;
+  const gridY = gridStep
+    ? closestSnap(movingY, gridTargets(movingY, gridStep), threshold)
+    : null;
+
+  /** Closest wins; a tie goes to the guide. */
+  const nearer = (guide: Snap | null, grid: Snap | null) =>
+    grid && (!guide || Math.abs(grid.delta) < Math.abs(guide.delta))
+      ? grid
+      : guide;
+  const snapX = nearer(guideX, gridX);
+  const snapY = nearer(guideY, gridY);
 
   const guides: SnapGuide[] = [];
   if (snapX) guides.push({ axis: 'x', position: snapX.line });
@@ -1265,6 +1322,10 @@ const LayerView = ({
     name === 'QrCodeLayer' ? 1 : Number(props.scale ?? 1);
   const selected = ctx.selectedLayerIds.includes(layerId);
   const pageScale = scaleCtx?.scale ?? ctx.scale;
+  // Snapping to the grid is opt-in, and independent of the grid being visible: a
+  // grid is often switched on purely as something to line up against.
+  const canvasView = useContext(CanvasViewContext);
+  const gridStep = canvasView?.snapGrid ? canvasView.gridSize : 0;
 
   const startInteraction = (
     mode: 'move' | ResizeCorner,
@@ -1319,6 +1380,7 @@ const LayerView = ({
             originSize,
             pageSizeOf(page),
             SNAP_THRESHOLD / pageScale,
+            gridStep,
           );
           next = snapped.position;
           snaps = snapped.guides;
@@ -1346,6 +1408,33 @@ const LayerView = ({
         nextH = originSize.height - dy;
         nextY = origin.y + dy;
       }
+
+      // A resize snaps to the grid too, on the edges the gesture is actually
+      // moving — sizing a box to a whole number of squares is the obvious use
+      // for a grid, and the anchored corner must not drift while it happens.
+      const resizeSnaps: SnapGuide[] = [];
+      if (gridStep) {
+        const reach = SNAP_THRESHOLD / pageScale;
+        const snapEdge = (value: number, axis: 'x' | 'y') => {
+          const line = nearestGridLine(value, gridStep, reach);
+          if (line === null) return value;
+          resizeSnaps.push({ axis, position: line });
+          return line;
+        };
+        if (mode.includes('e')) nextW = snapEdge(nextX + nextW, 'x') - nextX;
+        if (mode.includes('s')) nextH = snapEdge(nextY + nextH, 'y') - nextY;
+        if (mode.includes('w')) {
+          const right = nextX + nextW;
+          nextX = snapEdge(nextX, 'x');
+          nextW = right - nextX;
+        }
+        if (mode.includes('n')) {
+          const bottom = nextY + nextH;
+          nextY = snapEdge(nextY, 'y');
+          nextH = bottom - nextY;
+        }
+      }
+      ctx.actions.setGuides(resizeSnaps);
 
       const min = 24;
       if (nextW < min) {
@@ -2736,6 +2825,7 @@ export const Editor = ({
   const [showRulers, setShowRulers] = useState(bootView.showRulers ?? false);
   const [showGrid, setShowGrid] = useState(bootView.showGrid ?? false);
   const [gridSize, setGridSize] = useState(bootView.gridSize ?? 20);
+  const [snapGrid, setSnapGrid] = useState(bootView.snapGrid ?? false);
 
   useEffect(() => {
     // A reader of a shared design gets no say in the owner's editor settings:
@@ -2745,12 +2835,12 @@ export const Editor = ({
     try {
       localStorage.setItem(
         CANVAS_VIEW_KEY,
-        JSON.stringify({ showRulers, showGrid, gridSize }),
+        JSON.stringify({ showRulers, showGrid, gridSize, snapGrid }),
       );
     } catch {
       // A browser that refuses storage just loses the preference.
     }
-  }, [showRulers, showGrid, gridSize, readOnly]);
+  }, [showRulers, showGrid, gridSize, snapGrid, readOnly]);
   const [currentDesign, setCurrentDesign] = useState<DesignSummary | null>(
     boot.currentDesign,
   );
@@ -3135,7 +3225,11 @@ export const Editor = ({
           rotate: 0,
         });
       },
-      addTextLayer: addTree,
+      // A text preset is a whole tree carrying **fixed** layer ids, so inserting
+      // the same preset twice used to overwrite the first layer rather than add a
+      // second one. Re-key every insert, the way a paste does. Every other insert
+      // path goes through `addSingle`, which mints a fresh id itself.
+      addTextLayer: (tree) => addTree(remapLayerTree(tree, 0, 0)),
       addImageLayer: (media, size) => {
         const page = pageSizeOf(pagesRef.current[activePageRef.current]);
         const fitted = fitToPage(size, page);
@@ -3572,6 +3666,8 @@ export const Editor = ({
     setShowGrid,
     gridSize,
     setGridSize,
+    snapGrid,
+    setSnapGrid,
   };
 
   return (
@@ -3694,8 +3790,8 @@ export const DesignFrame = ({ data }: { data?: SerializedPage[] }) => {
       const selected = ctx?.selectedLayerIds ?? [];
       const page = pages[activePage];
 
-      // Measurement aids. Plain Shift+R / Shift+G, matching the usual design
-      // tool bindings, and only while a text layer is not being edited.
+      // Measurement aids. Plain Shift+R / Shift+G / Shift+S, matching the usual
+      // design tool bindings, and only while a text layer is not being edited.
       //
       // These sit outside the `mod` branch below on purpose: that branch is for
       // Ctrl/Cmd combinations, and Shift alone never sets `mod`.
@@ -3704,13 +3800,15 @@ export const DesignFrame = ({ data }: { data?: SerializedPage[] }) => {
       // dependencies do not change when the view toggles, so reading `showGrid`
       // from the closure would read whatever it was when the effect last ran and
       // the toggle would appear to do nothing.
-      if (key === 'R' || key === 'r' || key === 'G' || key === 'g') {
-        if (event.shiftKey && !mod) {
-          event.preventDefault();
-          if (key.toLowerCase() === 'r') canvasView?.setShowRulers((value) => !value);
-          else canvasView?.setShowGrid((value) => !value);
-          return;
-        }
+      const held =
+        key === 'R' || key === 'r' || key === 'G' || key === 'g' || key === 'S' || key === 's';
+      if (held && event.shiftKey && !mod) {
+        event.preventDefault();
+        const lower = key.toLowerCase();
+        if (lower === 'r') canvasView?.setShowRulers((value) => !value);
+        else if (lower === 'g') canvasView?.setShowGrid((value) => !value);
+        else canvasView?.setSnapGrid((value) => !value);
+        return;
       }
 
       if (mod) {
@@ -4437,6 +4535,18 @@ export const PageControl = () => {
                 </option>
               ))}
             </select>
+            <button
+              type="button"
+              aria-pressed={view.snapGrid}
+              title="Snap to grid (Shift+S) — works whether or not the grid is shown"
+              onClick={() => view.setSnapGrid(!view.snapGrid)}
+              css={{
+                background: view.snapGrid ? 'var(--app-guide)' : 'transparent',
+                color: view.snapGrid ? '#fff' : 'inherit',
+              }}
+            >
+              Snap
+            </button>
             <span css={{ opacity: 0.4 }}>|</span>
           </>
         )}
