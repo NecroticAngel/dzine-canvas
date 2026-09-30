@@ -10,6 +10,31 @@ export type ExportScale = (typeof EXPORT_SCALES)[number];
 
 type PageSize = { width: number; height: number };
 
+/** A region of the page, in page units, to export instead of the whole page. */
+export type ExportCrop = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+/**
+ * The part of the page a crop actually covers.
+ *
+ * The artboard clips to the page, and so does a capture of it, so a layer hanging
+ * off the edge cannot be exported whole however far the crop is asked to reach.
+ * Intersecting keeps the output size honest; skipping it would produce a file
+ * with empty margins where the page ended.
+ */
+export const clampToPage = (crop: ExportCrop, page: PageSize): ExportCrop | null => {
+  const left = Math.max(0, crop.x);
+  const top = Math.max(0, crop.y);
+  const right = Math.min(page.width, crop.x + crop.width);
+  const bottom = Math.min(page.height, crop.y + crop.height);
+  if (right - left < 1 || bottom - top < 1) return null;
+  return { x: left, y: top, width: right - left, height: bottom - top };
+};
+
 /**
  * The same "page" wrapper for every page, so a multi-page PDF can find them.
  * Page 0 keeps its existing id because saved designs embed URLs of that shape.
@@ -69,26 +94,36 @@ const capturePageImage = async (
   pageIndex: number,
   size: PageSize,
   format: 'png' | 'jpg' | 'svg',
-  options: { scale?: number; transparent?: boolean } = {},
+  options: {
+    scale?: number;
+    transparent?: boolean;
+    crop?: ExportCrop | null;
+  } = {},
 ) => {
   const { root, content } = getPageContent(pageIndex);
   const scale = options.scale ?? 2;
   // A JPEG has no alpha channel, so transparency only means anything elsewhere.
   const transparent = options.transparent && format !== 'jpg';
+  const crop = options.crop ?? null;
+  // The element keeps the page's own size, so nothing inside it reflows; the crop
+  // only changes which part of it lands on the canvas.
+  const outputWidth = crop ? crop.width : size.width;
+  const outputHeight = crop ? crop.height : size.height;
   const capture = {
     cacheBust: true,
+    // `pixelRatio` is the only multiplier that should be here. Passing
+    // `canvasWidth` as well multiplies by it *again* — html-to-image computes
+    // `canvas.width = canvasWidth * pixelRatio` — which made 2× export at 4× and
+    // 3× at 9×, and pushed large designs into the library's silent
+    // downscale-to-fit-canvas-limit path.
     pixelRatio: scale,
-    width: size.width,
-    height: size.height,
-    ...(format === 'svg'
-      ? {}
-      : {
-          canvasWidth: Math.round(size.width * scale),
-          canvasHeight: Math.round(size.height * scale),
-        }),
+    width: outputWidth,
+    height: outputHeight,
     ...(transparent ? {} : { backgroundColor: '#ffffff' }),
     style: {
-      transform: 'scale(1)',
+      transform: crop
+        ? `translate(${-crop.x}px, ${-crop.y}px) scale(1)`
+        : 'scale(1)',
       transformOrigin: 'top left',
       width: `${size.width}px`,
       height: `${size.height}px`,
@@ -161,29 +196,38 @@ export const exportDesign = async (options: {
   transparent?: boolean;
   /** PDF and images: render every page rather than just the active one. */
   allPages?: boolean;
+  /** Export only this region of the page, in page units — a selection. */
+  crop?: ExportCrop | null;
 }) => {
   const base = options.fileName ?? 'dzine-canvas';
   const scale = options.scale ?? 2;
   const transparent = Boolean(options.transparent);
+  const crop = options.crop
+    ? clampToPage(options.crop, options.pageSize)
+    : null;
+  // A selection crop is the size of the output as well as its position.
+  const outputSize = crop ?? options.pageSize;
 
   if (options.format === 'json') {
     downloadObjectAsJson(base, options.pages);
     return;
   }
 
-  const requested = options.allPages
-    ? mountedPageIndexes()
-    : [options.pageIndex];
+  // A selection belongs to one page, so it overrides "all pages" rather than
+  // quietly handing back the same crop from every page.
+  const requested =
+    options.allPages && !crop ? mountedPageIndexes() : [options.pageIndex];
   const pageIndexes = requested.length ? requested : [options.pageIndex];
 
   if (options.format === 'pdf') {
-    // Every page is placed at the active page's size. A design whose pages are
-    // all the same size — which is the normal case — is exact; a mixed one is
-    // scaled to fit rather than cropped.
+    // Every page is placed at the output size. A design whose pages are all the
+    // same size — the normal case — is exact; a mixed one is scaled to fit rather
+    // than cropped.
+    const orientation = outputSize.width >= outputSize.height ? 'l' : 'p';
     const pdf = new jsPDF({
-      orientation: options.pageSize.width >= options.pageSize.height ? 'l' : 'p',
+      orientation,
       unit: 'px',
-      format: [options.pageSize.width, options.pageSize.height],
+      format: [outputSize.width, outputSize.height],
       hotfixes: ['px_scaling'],
     });
 
@@ -192,21 +236,18 @@ export const exportDesign = async (options: {
         pageIndex,
         options.pageSize,
         'png',
-        { scale, transparent },
+        { scale, transparent, crop },
       );
       if (position > 0) {
-        pdf.addPage(
-          [options.pageSize.width, options.pageSize.height],
-          options.pageSize.width >= options.pageSize.height ? 'l' : 'p',
-        );
+        pdf.addPage([outputSize.width, outputSize.height], orientation);
       }
       pdf.addImage(
         dataUrl,
         'PNG',
         0,
         0,
-        options.pageSize.width,
-        options.pageSize.height,
+        outputSize.width,
+        outputSize.height,
       );
     }
 
@@ -220,7 +261,7 @@ export const exportDesign = async (options: {
       pageIndex,
       options.pageSize,
       options.format,
-      { scale, transparent },
+      { scale, transparent, crop },
     );
     const suffix =
       pageIndexes.length > 1 ? `-${position + 1}` : '';

@@ -11,12 +11,6 @@
 
 ## Next up
 
-- [ ] **Export the selected layer only.** This needs more than a menu entry, which is why it was left:
-      the vendored layer renderer writes no `data-layer-id` (the only such attribute in the codebase is
-      `data-selected-cell`, for table cells), so there is no way to find a layer's DOM node from its id.
-      Either patch the layer package to stamp one, or crop the captured page to the selection's
-      bounding box — which needs the editor to expose the box it already computes internally
-      (`layerBoxes`).
 - [ ] **Snap layers to the grid.** The grid is a measuring aid today; pulling layers onto it means a
       branch in `computeSnap` alongside the existing guide snapping. The editor's guides are transient
       alignment lines shown *during* a drag, so this is a separate mechanism, not a tweak.
@@ -49,9 +43,10 @@
 ## Housekeeping
 
 - [ ] **Clear out the test designs** accumulated while verifying: `Square` (created reproducing the
-      table bug), `Portraitdfsfe`, the several "Blank White" copies, and `e75a61c1` (1080×1920), which
-      was resized with the *first* magic-resize algorithm and so looks nothing like what the current
-      one produces.
+      table bug), `Portraitdfsfe`, the several "Blank White" copies, `Facebook Profile Photo` (made to
+      test the selection export, and where the 30° rotate experiment was run), and `e75a61c1`
+      (1080×1920), which was resized with the *first* magic-resize algorithm and so looks nothing like
+      what the current one produces.
 - [ ] **Clear the Conflict banner** on `Starter D-Zine Canvas` — the QR work inserted layers while the
       server had a newer version, so *Keep my version* / *Use their version* is waiting on the welcome
       page.
@@ -84,7 +79,7 @@ through Phase 4 (identity, per-tenant designs, template sharing, hardening, conf
 work end to end out of our own API, and text marks render. Dev mode still needs no configuration.
 
 Next, in order:
-1. Export the selected layer only — see "Next up" for why it is more than a menu entry.
+1. Snap layers to the grid — see "Next up".
 2. Then whatever looks most valuable from the smaller debts and known issues.
 
 Verify in the real browser, not just tsc, and read the §4 gotchas before writing browser tests — two of

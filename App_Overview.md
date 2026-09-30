@@ -397,6 +397,16 @@ no longer drops the operation (gotcha 18).
     before measuring the thing I had assumed was working. The fix is one synchronous measurement on
     selection change, with rAF used only to *follow* a moving layer: a frame is an optimisation, and
     anything the user can see must not depend on one arriving.
+40. **`html-to-image` multiplies `canvasWidth` by `pixelRatio`.** `toCanvas` computes
+    `canvas.width = (options.canvasWidth || width) * ratio`, so passing a canvas size *and* a pixel
+    ratio scales the output **twice**: 2× exported at 4×, 3× at 9×. It had been that way since the
+    scale menu was added, and nothing caught it because 1× is right and the notes compared exports to
+    each other instead of to the page. Two things make it worth stating plainly. The numbers were
+    *squared*, not merely wrong, which is the signature of a double multiplication — and the oversize
+    canvases then hit the browser's dimension limit, where the library **silently scales the canvas
+    down** (`checkCanvasDimensions`) rather than failing, so a large export could be smaller than the
+    multiplier asked for with nothing to say why. Pass `width`/`height` and `pixelRatio`; never both a
+    canvas size and a ratio.
 
 **State of the library (context, not a TODO).** Test designs have accumulated: `Portraitdfsfe` (used
 for testing), `Square` (created while reproducing the table bug), several "Blank White" copies made
@@ -553,7 +563,7 @@ product bug. Slow the drag down (~6px steps, 35 ms waits, 120 ms pause after `do
   prefers Google's full catalogue and the key never reaches a browser. Verified: no requests to
   `googleapis.com` remain, 22 families served, and a sampled file is a real TTF (`00010000`).
 
-### Tier 5 — export upgrades — ✅ DONE (except export-selected — see `ideas_todo.md`)
+### Tier 5 — export upgrades — ✅ DONE
 - [x] **SVG** export (`toSvg`), alongside PNG/JPG/PDF/JSON.
 - [x] **1× / 2× / 3× scale**, chosen in the export menu. 2× was previously hard-coded.
 - [x] **Transparent background** for PNG and SVG (omitted for JPG, which has no alpha channel, and
@@ -564,8 +574,36 @@ product bug. Slow the drag down (~6px steps, 35 ms waits, 120 ms pause after `do
       blob for two pages; 1× vs 3× PNG differ by the expected amount; and decoding both PNGs shows
       the corner pixel is `rgba(255,255,255,255)` opaque against `rgba(0,0,0,0)` transparent at the
       same 800×400 (200×100 at 2×).
-- Note: a multi-page PDF places every page at the active page's size. Designs whose pages share one
+- Note: a multi-page PDF places every page at the output size. Designs whose pages share one
       size — the normal case — are exact.
+- [x] **Selection only.** A checkbox in the export menu crops the capture to the selected layers:
+      `query.selectionBounds()` returns the union of their boxes in page units and
+      `exportDesign({ crop })` captures the page content with `translate(-x, -y)` and a canvas the
+      size of the crop, so nothing inside the page reflows. It works for PNG, JPG, SVG and PDF (for
+      PDF the crop is the page size). A selection belongs to one page, so it overrides "All pages"
+      rather than handing back the same crop from every page, and the option switches itself off when
+      the selection goes away — a selection-only export that quietly becomes a whole-page export is
+      a *wrong file* rather than a refusal.
+- [x] The bounds are **rotation-aware**, which is the part that needed care: a layer frame is rotated
+      about its **top-left** corner, so a rotated layer reaches outside its own `boxSize` and a crop
+      taken from the frames alone slices the corners off. Verified by temporarily rotating the heading
+      preset 30°: the menu read the rotated extent as 512×350 where the plain box is 536×95, matching
+      the predicted `w·cosθ + h·sinθ` exactly, and the exported PNG followed it. The crop is also
+      clipped to the page, because the artboard clips — a layer hanging off the edge exported
+      194×95 where its box said 536×95, and the menu now shows that same clipped size, so the label
+      and the file agree.
+- [x] **Found and fixed while building it: the scale multipliers were squared.** A 1640×924 page
+      exported at "2×" produced 6560×3696 (4×) and at "3×" produced 14760×8316 (9×). See gotcha 40.
+      Now 1×/2×/3× are 1640×924 / 3280×1848 / 4920×2772, and a 536×95 selection gives 536×95 /
+      1072×190 / 1608×285.
+
+**How this was verified** (all three techniques are reusable): stub `HTMLAnchorElement.prototype.click`
+from `page.evaluate` to catch every download and its data URL; read PNG dimensions straight out of the
+base64 IHDR bytes rather than awaiting an `Image` (which can hang on a bad href); and read the PDF's
+`/MediaBox` from the blob, with `URL.revokeObjectURL` stubbed to a no-op so the blob is still there
+when you look. Rotating a preset temporarily is the only practical way to test a rotated layer — the
+editor has no rotate handle, and canvas clicks do not reliably select here, so a preset that *arrives*
+selected is the way in.
 
 ### Tier 6 — QR polish — ✅ DONE
 - [x] The three misleading thumbnails are gone (`public/assets/images/qr-code/{1,2,3}.png` deleted).

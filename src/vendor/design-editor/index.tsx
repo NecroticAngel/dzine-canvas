@@ -221,6 +221,8 @@ type EditorQuery = {
   serialize: () => SerializedPage[];
   getPageSize: (pageIndex: number) => PageSize;
   activePage: () => number;
+  /** Where the current selection is, in page units; null when nothing is selected. */
+  selectionBounds: () => SelectionBox | null;
   listDesigns: () => DesignSummary[];
   currentDesign: () => DesignSummary | null;
   history: {
@@ -1102,6 +1104,58 @@ const layerBoxes = (
     boxes.push({ id, x: p.x, y: p.y, width: box.width, height: box.height });
   }
   return boxes;
+};
+
+/**
+ * The box the given layers occupy, in page units, or null when none of them has
+ * a size.
+ *
+ * Rotation is why this is not `layerBoxes` plus a union: a layer frame is
+ * rotated about its **top-left** corner (`transformOrigin: 'top left'` on the
+ * frame), so a rotated layer reaches outside its own `boxSize`. A crop taken
+ * from the frames alone would slice the corners off a rotated layer.
+ *
+ * Deliberately not clipped to the page — it answers "where is the selection",
+ * and each caller decides what that means. The export clips, because the
+ * artboard clips and a crop is meant to be what you saw.
+ */
+const selectionBounds = (
+  pages: SerializedPage[],
+  activePage: number,
+  ids: string[],
+): SelectionBox | null => {
+  const layers = pages[activePage]?.layers;
+  if (!layers || !ids.length) return null;
+  let left = Number.POSITIVE_INFINITY;
+  let top = Number.POSITIVE_INFINITY;
+  let right = Number.NEGATIVE_INFINITY;
+  let bottom = Number.NEGATIVE_INFINITY;
+  for (const id of ids) {
+    const props = layers[id]?.props as
+      | { position?: Point; boxSize?: PageSize; rotate?: number }
+      | undefined;
+    const position = props?.position;
+    const size = props?.boxSize;
+    if (!position || !size?.width || !size?.height) continue;
+    const angle = (Number(props?.rotate ?? 0) * Math.PI) / 180;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    // The frame's own corners once rotated, each relative to the frame origin.
+    const corners = [
+      { x: 0, y: 0 },
+      { x: size.width * cos, y: size.width * sin },
+      { x: -size.height * sin, y: size.height * cos },
+      { x: size.width * cos - size.height * sin, y: size.width * sin + size.height * cos },
+    ];
+    for (const corner of corners) {
+      left = Math.min(left, position.x + corner.x);
+      top = Math.min(top, position.y + corner.y);
+      right = Math.max(right, position.x + corner.x);
+      bottom = Math.max(bottom, position.y + corner.y);
+    }
+  }
+  if (!Number.isFinite(left) || right <= left || bottom <= top) return null;
+  return { x: left, y: top, width: right - left, height: bottom - top };
 };
 
 /** Move one layer a single slot up (`forward`) or down its parent's child list. */
@@ -3464,6 +3518,7 @@ export const Editor = ({
       serialize: () => clonePages(pagesRef.current),
       getPageSize: (pageIndex) => pageSizeOf(pagesRef.current[pageIndex]),
       activePage: () => activePageRef.current,
+      selectionBounds: () => selectionBounds(pages, activePage, selectedLayerIds),
       listDesigns: () => listDesignSummaries(),
       currentDesign: () => currentDesignRef.current,
       history: {
@@ -3471,7 +3526,7 @@ export const Editor = ({
         canRedo: () => future.current.length > 0,
       },
     }),
-    [pages, activePage, currentDesign, designs],
+    [pages, activePage, currentDesign, designs, selectedLayerIds],
   );
 
   const value = useMemo<EditorContextValue>(
@@ -3807,17 +3862,10 @@ export const DesignFrame = ({ data }: { data?: SerializedPage[] }) => {
   const size = pageSizeOf(page);
   const guides = ctx?.guides ?? [];
 
-  // The union of the selected layers' boxes, in page units, so the rulers can
-  // shade the extent of what is selected the way a design tool does.
-  const selectionBox = ((): SelectionBox | null => {
-    const boxes = layerBoxes(pages, activePage, selectedLayerIds);
-    if (!boxes.length) return null;
-    const left = Math.min(...boxes.map((item) => item.x));
-    const top = Math.min(...boxes.map((item) => item.y));
-    const right = Math.max(...boxes.map((item) => item.x + item.width));
-    const bottom = Math.max(...boxes.map((item) => item.y + item.height));
-    return { x: left, y: top, width: right - left, height: bottom - top };
-  })();
+  // Where the selection is, so the rulers can shade its extent the way a design
+  // tool does. The same helper the selection-only export crops to, so the
+  // shading and the exported file cannot disagree.
+  const selectionBox = selectionBounds(pages, activePage, selectedLayerIds);
 
   return (
     <div

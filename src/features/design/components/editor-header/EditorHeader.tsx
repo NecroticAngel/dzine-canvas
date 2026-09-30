@@ -20,6 +20,7 @@ import {
   type SyncStatus,
 } from '../../../../utils/designLibrary';
 import {
+  clampToPage,
   EXPORT_SCALES,
   exportDesign,
   type ExportFormat,
@@ -96,6 +97,17 @@ const EditorHeaderForwardRef: ForwardRefRenderFunction<
   const [exportScale, setExportScale] = useState<ExportScale>(2);
   const [exportTransparent, setExportTransparent] = useState(false);
   const [exportAllPages, setExportAllPages] = useState(false);
+  const [exportSelection, setExportSelection] = useState(false);
+  /**
+   * Where the selection is, in page units — also what "Selection only" crops to.
+   * Clipped to the page before being shown, because the export clips too and the
+   * size on the menu should be the size of the file.
+   */
+  const selection = query.selectionBounds();
+  const selectionCrop = selection
+    ? clampToPage(selection, query.getPageSize(query.activePage()))
+    : null;
+  const hasSelection = selectionCrop !== null;
   const [filesOpen, setFilesOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [nameDialog, setNameDialog] = useState<NameDialogState | null>(null);
@@ -157,6 +169,13 @@ const EditorHeaderForwardRef: ForwardRefRenderFunction<
     return () => window.cancelAnimationFrame(frame);
   }, [nameDialog]);
 
+  // With nothing selected, a selection-only export would quietly become a
+  // whole-page export — a wrong file rather than a refusal. Turn the option off
+  // when the selection goes away.
+  useEffect(() => {
+    if (!hasSelection) setExportSelection(false);
+  }, [hasSelection]);
+
   const openNameDialog = (next: NameDialogState) => {
     setFilesOpen(false);
     setExportOpen(false);
@@ -165,6 +184,15 @@ const EditorHeaderForwardRef: ForwardRefRenderFunction<
 
   const handleExport = async (format: ExportFormat) => {
     if (exporting) return;
+    // Read the selection before clearing it: the crop needs to know where it was,
+    // and clearing it is what hides the outlines and handles from the capture.
+    const crop = exportSelection ? selectionCrop : null;
+    if (exportSelection && !crop) {
+      window.alert(
+        'Nothing is selected, so there is nothing to export on its own. Select a layer, or turn "Selection only" off.',
+      );
+      return;
+    }
     setExporting(true);
     setExportOpen(false);
     try {
@@ -186,6 +214,7 @@ const EditorHeaderForwardRef: ForwardRefRenderFunction<
         // JPEG has no alpha channel, so the toggle would be a lie there.
         transparent: exportTransparent && format !== 'jpg',
         allPages: exportAllPages,
+        crop,
       });
     } catch (error) {
       console.error(error);
@@ -862,18 +891,57 @@ const EditorHeaderForwardRef: ForwardRefRenderFunction<
                 Transparent background
               </label>
               <label
+                title={
+                  hasSelection
+                    ? 'Export just what is selected, cropped to fit it'
+                    : 'Select something on the canvas first'
+                }
+                css={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '6px 12px',
+                  fontSize: 13,
+                  cursor: hasSelection ? 'pointer' : 'not-allowed',
+                  opacity: hasSelection ? 1 : 0.5,
+                }}
+              >
+                <input
+                  type="checkbox"
+                  disabled={!hasSelection}
+                  checked={exportSelection}
+                  onChange={(event) => setExportSelection(event.target.checked)}
+                />
+                Selection only
+                {selectionCrop && (
+                  <span
+                    css={{ color: '#9aa0b5', fontSize: 11, fontWeight: 500 }}
+                  >
+                    {Math.floor(selectionCrop.width)}×
+                    {Math.floor(selectionCrop.height)}
+                  </span>
+                )}
+              </label>
+              <label
+                title={
+                  exportSelection
+                    ? 'A selection belongs to one page, so this is off'
+                    : undefined
+                }
                 css={{
                   display: 'flex',
                   alignItems: 'center',
                   gap: 8,
                   padding: '6px 12px 10px',
                   fontSize: 13,
-                  cursor: 'pointer',
+                  cursor: exportSelection ? 'not-allowed' : 'pointer',
+                  opacity: exportSelection ? 0.5 : 1,
                   borderBottom: '1px solid #3a3a4c',
                 }}
               >
                 <input
                   type="checkbox"
+                  disabled={exportSelection}
                   checked={exportAllPages}
                   onChange={(event) => setExportAllPages(event.target.checked)}
                 />
