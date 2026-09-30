@@ -241,11 +241,11 @@ with them, and creates its own designs. Decisions already taken: orgs with multi
   parse and written from another, so it was discarded and the banner never appeared. See gotcha 19.
 
 **Next**
-1. Tier 7: magic resize — the last differentiator, and the biggest.
-2. Render text layers properly, so bold and italic marks work and `/texts` presets stop looking
-   identical (see the gaps list under the font work).
-3. Export selected-layer-only, which needs the layer renderer to stamp an id.
-4. Deferred cleanups at the bottom of §5.
+1. Render text layers properly, so bold and italic marks work and `/texts` presets stop looking
+   identical (see the gaps list under the font work). The last known functional gap.
+2. Export selected-layer-only, which needs the layer renderer to stamp an id.
+3. Deferred cleanups at the bottom of §5 — design thumbnails failing with `ERR_BLOCKED_BY_ORB` is the
+   one with a visible symptom.
 
 **Also known (not scheduled)**
 - **The upload queue is in memory only, so a page reload inside the 800 ms debounce silently loses
@@ -410,6 +410,17 @@ before you trust an `Invoke-RestMethod` assertion.
     that calls the same action, or read the handler. The editor's undo/redo are icons in the header with
     no label, reachable in the DOM as the two children of the group immediately before the GitHub link,
     and their `opacity` reports `canUndo`/`canRedo` — which is how the brand applies were proved undoable.
+
+37. **A pure function that "passes every test" can still be wrong.** The first magic-resize algorithm was
+    tested against assertions I wrote from its own rules — positions mapped per axis, sizes scaled
+    uniformly, nothing outside the frame — and satisfied all of them while turning a landscape banner
+    into dust. The assertions described the implementation, not the outcome, so they could not catch a
+    bad outcome. Pure functions are cheap to test *and* cheap to look at: render the result, or reason
+    about one concrete example, before trusting the green.
+38. **Resizing to the size it already has must be a no-op.** Worth stating as an invariant because it is
+    easy to break and trivial to check: any transform that computes a new centre has to reproduce the
+    original coordinates exactly at ratio 1. It is the cheapest guard against a whole class of
+    drift-in-by-a-few-pixels bugs, and it caught the centring rule I nearly shipped.
 
 Test data in the library: `Portraitdfsfe` (used for testing),`Square` (created while reproducing the table bug — safe to delete).
 A design may be left showing the **Conflict** banner: the QR work inserted layers while the server had
@@ -645,12 +656,50 @@ declares `getFonts` in its config type and never calls it. Every text layer rend
   page show no thumbnail. Pre-existing, unrelated to fonts, and worth a look.
 
 
-### Tier 7 — differentiators
-- [ ] Magic resize (change canvas size, rescale/reflow layers) — Canva's killer feature. **Next.**
+### Tier 7 — differentiators — ✅ ALL DONE
+- [x] **Magic resize** — change the canvas size and re-lay-out the design for it.
 - [x] **Brand kit** — the colours and fonts a tenant uses, saved once and shared by the team.
 - [x] "Save as template" exists (Phase 3): `POST /templates` with a `sourceDesignId`, and a client's
       templates are private to its tenant. An admin can publish a shared one.
 - [x] **Share links** — a read-only URL to one design, for somebody with no account.
+
+### Magic resize — ✅ DONE
+- [x] `resizePages(pages, size)` is a pure function in the vendor, exported so it can be exercised
+      directly; `actions.resizeDesign(size)` commits the result as **one undoable edit**. Every page is
+      resized, not just the visible one: a design whose pages disagree about their size is one nobody
+      can export, and the export paths already assume one size throughout.
+- [x] The worked example: a layer that already covered the page is a **background** and is stretched to
+      the new size, so the frame is filled; everything else keeps its proportions. Type scales with its
+      box or it would overflow a box that shrank under it. A layer that bled off the edge keeps
+      bleeding — only layers that were fully inside are pulled back inside.
+- [x] A **Resize…** entry in the Files menu showing the current size, opening a dialog with the whole
+      preset catalogue (grouped and searchable, same data as the new-design picker), custom width and
+      height, and a plain-English statement of what will happen — magic resize is a guess about intent,
+      and a user who cannot see the rules cannot tell a good result from a broken one.
+- [x] The picker's `PresetPreview` and `PresetCard` moved to `components/canvas-size/presetCards.tsx`
+      and are imported by both dialogs. The two differ in what they do with the choice and in their
+      surrounding chrome, but a preset has to look the same in both, and a second copy would drift.
+- [x] Verified: identity is exact (resizing to the current size leaves every coordinate untouched); a
+      1640×924 banner to 1080×1920 gives a 1080×1920 frame with the content scaled by 0.659 and its
+      composition intact; 1080×1080 and half-size behave; the persisted geometry matches the pure
+      function's predictions exactly (heading 520,260 600×145 42px → 342,696 395×95 27.7px); undo
+      restores the old size and redo reapplies it.
+
+**The algorithm changed after looking at the result, and the reason is the interesting part.** The
+first version mapped each layer's position onto the new page proportions *per axis* and scaled sizes
+uniformly. It passed every test I had — positions mapped, sizes proportional, nothing outside the
+frame — and it produced scattered dust: a landscape banner resized to portrait had its heading, caption
+and rule smeared across the full height of a 1920px page. Faithful to the rules, and obviously wrong to
+look at. The fix is to place everything **relative to the content's bounding box** and scale positions
+and sizes by the *same* factor, so the composition keeps its proportions and only its place in the frame
+changes. A centred design stays centred; a deliberately off-centre one keeps its bias.
+
+**The trade-off, deliberately chosen:** for a large aspect change the content keeps its proportions and
+*gains margin* rather than being reflowed. A true reflow engine — re-stacking a row of three into a
+column, growing type to fill — is a much bigger piece of work and a different feature. What this does
+is never distort anything, never scatter, fill the frame with a background when there is one, and be
+undoable. Worth revisiting if a client complains that their portrait version looks small.
+
 
 ### Brand kit — ✅ DONE
 - [x] `brand_kits` table, one row per tenant, replaced wholesale on save. Per tenant rather than per

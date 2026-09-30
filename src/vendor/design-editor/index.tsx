@@ -158,6 +158,14 @@ type EditorActions = {
   distributeLayers: (ids: string[], axis: DistributeAxis) => void;
   setEditingLayer: (id: string | null) => void;
   goToPage: (index: number) => void;
+  /**
+   * Re-lay-out every page for a new canvas size, as one undoable edit.
+   *
+   * All pages, not just the visible one: a design whose pages disagree about
+   * their size is a design nobody can export, and the export paths already
+   * assume one size throughout.
+   */
+  resizeDesign: (size: PageSize) => void;
   addPage: () => void;
   duplicatePage: (index?: number) => void;
   deletePage: (index?: number) => void;
@@ -351,6 +359,208 @@ const createBlankPage = (size?: PageSize): SerializedPage => ({
 const pageSizeOf = (page: SerializedPage | undefined): PageSize => {
   const box = page?.layers?.ROOT?.props?.boxSize as PageSize | undefined;
   return { width: box?.width ?? 1640, height: box?.height ?? 924 };
+};
+
+/**
+ * Re-lay-out every page for a new canvas size.
+ *
+ * Two rules, and the difference between them is the whole trick:
+ *
+ *  - **Position maps each axis independently.** Something centred stays centred,
+ *    something in the bottom third stays in the bottom third when the canvas
+ *    becomes tall. A single uniform factor would drag everything toward one
+ *    corner instead.
+ *  - **Size scales uniformly**, by the smaller of the two ratios, so nothing is
+ *    squashed. A 1080×1080 square on a 1080×1920 canvas keeps its proportions;
+ *    only its box is mapped.
+ *
+ * Backgrounds are the exception. A layer that already covered the page is meant
+ * to cover it, so it is stretched to the new size rather than scaled down and
+ * left with a margin nobody asked for.
+ *
+ * Type scales with its box, or text would overflow a box that had shrunk under
+ * it. A layer that bled off the edge keeps bleeding — only layers that were
+ * fully inside are pulled back inside, so a deliberate bleed is preserved.
+ */
+export const resizePages = (
+  pages: SerializedPage[],
+  target: PageSize,
+): SerializedPage[] => {
+  const next = clonePages(pages);
+  if (!target.width || !target.height) return next;
+
+  for (const page of next) {
+    const from = pageSizeOf(page);
+    if (!from.width || !from.height) continue;
+
+    const ratioX = target.width / from.width;
+    const ratioY = target.height / from.height;
+    const uniform = Math.min(ratioX, ratioY);
+    /** A layer already covering the page is a background, not content. */
+    const wasCovering = (box: PageSize) =>
+      box.width >= from.width * 0.9 && box.height >= from.height * 0.9;
+
+    const root = page.layers.ROOT;
+    if (root) {
+      root.props = {
+        ...root.props,
+        boxSize: {
+          ...(root.props.boxSize as PageSize),
+          width: target.width,
+          height: target.height,
+        },
+        position: { x: 0, y: 0 },
+      };
+    }
+
+    /** Every layer under the root, at any depth. */
+    const everyLayer = (() => {
+      const ids: string[] = [];
+      const visit = (id: string) => {
+        const layer = page.layers[id];
+        if (!layer) return;
+        ids.push(id);
+        for (const childId of layer.child ?? []) visit(childId);
+      };
+      for (const id of root?.child ?? []) visit(id);
+      return ids;
+    })();
+
+    const boxOf = (id: string) => {
+      const props = (page.layers[id]?.props ?? {}) as Record<string, unknown>;
+      return {
+        position: props.position as Point | undefined,
+        boxSize: props.boxSize as PageSize | undefined,
+      };
+    };
+
+    /**
+     * The content's bounding box.
+     *
+     * Everything is placed relative to this rather than to the page, and that is
+     * what keeps a layout together. Mapping each layer straight onto the new
+     * proportions looks reasonable for a small size change and scatters the
+     * design across a large one: a landscape banner resized to a portrait frame
+     * became dust spread over the full height of it.
+     *
+     * Backgrounds are excluded. They are the frame, and stretch to fill whatever
+     * frame they are given.
+     */
+    const content = (() => {
+      let left = Infinity;
+      let top = Infinity;
+      let right = -Infinity;
+      let bottom = -Infinity;
+      for (const id of everyLayer) {
+        const { position, boxSize } = boxOf(id);
+        if (
+          position &&
+          boxSize?.width &&
+          boxSize?.height &&
+          !wasCovering(boxSize)
+        ) {
+          left = Math.min(left, position.x);
+          top = Math.min(top, position.y);
+          right = Math.max(right, position.x + boxSize.width);
+          bottom = Math.max(bottom, position.y + boxSize.height);
+        }
+      }
+      return Number.isFinite(left)
+        ? { x: left, y: top, width: right - left, height: bottom - top }
+        : { x: 0, y: 0, width: from.width, height: from.height };
+    })();
+
+    const oldCentre = {
+      x: content.x + content.width / 2,
+      y: content.y + content.height / 2,
+    };
+    /**
+     * Where the content sat in the old page, as a fraction of it — so a centred
+     * design stays centred and a deliberately off-centre one keeps its bias
+     * rather than being nudged to the middle.
+     */
+    const newCentre = {
+      x: (oldCentre.x / from.width) * target.width,
+      y: (oldCentre.y / from.height) * target.height,
+    };
+
+    const scaleFontSize = (value: unknown) => {
+      const numeric = Number.parseFloat(String(value ?? ''));
+      if (!Number.isFinite(numeric) || numeric <= 0) return value;
+      // Keep the unit the layer had, so `24px` stays `24px`-shaped.
+      const unit = String(value).replace(/^[\d.]+/, '') || 'px';
+      return `${Math.max(6, Math.round(numeric * uniform * 10) / 10)}${unit}`;
+    };
+
+    for (const id of everyLayer) {
+      const layer = page.layers[id];
+      const props = (layer.props ?? {}) as Record<string, unknown>;
+      const { position, boxSize } = boxOf(id);
+
+      if (position && boxSize && boxSize.width && boxSize.height) {
+        if (wasCovering(boxSize)) {
+          // Covers the old page, so it covers the new one — usually at 0,0, and
+          // a bleed stays a proportional bleed.
+          props.position = {
+            ...position,
+            x: position.x * ratioX,
+            y: position.y * ratioY,
+          };
+          props.boxSize = {
+            ...boxSize,
+            width: target.width,
+            height: target.height,
+          };
+        } else {
+          const width = boxSize.width * uniform;
+          const height = boxSize.height * uniform;
+          const centreX = position.x + boxSize.width / 2;
+          const centreY = position.y + boxSize.height / 2;
+          // Position and size scale by the same factor, so the composition keeps
+          // its proportions and only its place in the frame changes.
+          const nextCentreX = newCentre.x + (centreX - oldCentre.x) * uniform;
+          const nextCentreY = newCentre.y + (centreY - oldCentre.y) * uniform;
+
+          const inside =
+            position.x >= 0 &&
+            position.y >= 0 &&
+            position.x + boxSize.width <= from.width &&
+            position.y + boxSize.height <= from.height;
+          let x = nextCentreX - width / 2;
+          let y = nextCentreY - height / 2;
+          if (inside) {
+            x = Math.min(Math.max(0, x), Math.max(0, target.width - width));
+            y = Math.min(Math.max(0, y), Math.max(0, target.height - height));
+          }
+
+          props.position = { ...position, x, y };
+          props.boxSize = { ...boxSize, width, height };
+        }
+      }
+
+      const doc = props.doc as
+        | { content?: { attrs?: Record<string, unknown> }[] }
+        | undefined;
+      if (Array.isArray(doc?.content)) {
+        props.doc = {
+          ...doc,
+          content: doc.content.map((block) =>
+            block.attrs?.fontSize === undefined
+              ? block
+              : {
+                  ...block,
+                  attrs: {
+                    ...block.attrs,
+                    fontSize: scaleFontSize(block.attrs.fontSize),
+                  },
+                },
+          ),
+        };
+      }
+    }
+  }
+
+  return next;
 };
 
 const fitToPage = (size: PageSize, page: PageSize, maxRatio = 0.7): PageSize => {
@@ -2548,6 +2758,14 @@ export const Editor = ({
     [commit],
   );
 
+  const resizeDesign = useCallback(
+    (size: PageSize) => {
+      if (!size.width || !size.height) return;
+      commit(resizePages(pagesRef.current, size));
+    },
+    [commit],
+  );
+
   /**
    * Patch the block attributes of a text layer.
    *
@@ -2944,6 +3162,7 @@ export const Editor = ({
       updateLayerText: patchLayerText,
       updateLayerProps: patchLayerProps,
       updateTextAttrs: patchTextAttrs,
+      resizeDesign,
       setSelectedCell,
       updateTableCell: patchTableCell,
       registerTextInput: (el) => {
@@ -3074,6 +3293,7 @@ export const Editor = ({
     patchLayerText,
     patchLayerProps,
     patchTextAttrs,
+    resizeDesign,
     patchTableCell,
     persistCurrent,
     refreshDesignList,

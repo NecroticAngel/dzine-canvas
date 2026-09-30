@@ -26,6 +26,7 @@ import {
   type ExportScale,
 } from '../../../../utils/exportDesign';
 import { ThemeToggle, useAppTheme } from '../../../../shared/theme';
+import { ResizeDialog } from '../canvas-size';
 import { ShareDialog } from '../share';
 
 interface HeaderLayoutProps {
@@ -88,7 +89,7 @@ const EditorHeaderForwardRef: ForwardRefRenderFunction<
   const openFileRef = useRef<HTMLInputElement>(null);
   const exportMenuRef = useRef<HTMLDivElement>(null);
   const filesMenuRef = useRef<HTMLDivElement>(null);
-  const { actions, query, currentDesign, designs, dirty } = useEditor();
+  const { actions, query, currentDesign, designs, dirty, pages } = useEditor();
   const { mode, toggleMode } = useAppTheme();
   const [saveState, setSaveState] = useState<'idle' | 'saved'>('idle');
   const [exportOpen, setExportOpen] = useState(false);
@@ -99,6 +100,7 @@ const EditorHeaderForwardRef: ForwardRefRenderFunction<
   const [exporting, setExporting] = useState(false);
   const [nameDialog, setNameDialog] = useState<NameDialogState | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
+  const [resizeOpen, setResizeOpen] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
   const nameInputRef = useRef<HTMLInputElement>(null);
 
@@ -486,6 +488,21 @@ const EditorHeaderForwardRef: ForwardRefRenderFunction<
                 <span>Rename…</span>
                 <span css={{ color: '#9aa0b5', fontWeight: 500, fontSize: 12 }}>
                   {currentDesign?.name ?? 'Untitled'}
+                </span>
+              </button>
+              <button
+                type="button"
+                css={menuItemCss}
+                title="Change the canvas size and re-lay-out the design for it"
+                onClick={() => {
+                  setFilesOpen(false);
+                  setResizeOpen(true);
+                }}
+              >
+                <span>Resize…</span>
+                <span css={{ color: '#9aa0b5', fontWeight: 500, fontSize: 12 }}>
+                  {query.getPageSize(query.activePage()).width} ×{' '}
+                  {query.getPageSize(query.activePage()).height}
                 </span>
               </button>
               <div
@@ -956,6 +973,17 @@ const EditorHeaderForwardRef: ForwardRefRenderFunction<
           Preview
         </div>
       </div>
+      {resizeOpen && (
+        <ResizeDialog
+          current={query.getPageSize(query.activePage())}
+          pageCount={pages.length}
+          onClose={() => setResizeOpen(false)}
+          onResize={(width, height) => {
+            actions.resizeDesign({ width, height });
+            setResizeOpen(false);
+          }}
+        />
+      )}
       {shareOpen && (
         <ShareDialog
           designId={currentDesign?.id ?? ''}
