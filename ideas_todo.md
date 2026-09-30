@@ -9,11 +9,11 @@
 
 ---
 
-## Next up
+## Nothing queued
 
-
-- [ ] **User-placed guides dragged out of the rulers.** Again not the same feature as snapping: these
-      would be persistent, movable ruler guides of the kind the rulers currently only measure with.
+The feature backlog is empty: grid snapping and layout guides were the last two items, and both are
+done (see `App_Overview.md`). What is left is the list below — the failing thumbnails are the only
+entry with a visible symptom.
 
 ## Smaller debts
 
@@ -21,6 +21,9 @@
       anchors over the selection, so it does not follow light/dark restyling.
 - [ ] **Two junk 0×0 draw layers** are saved into a design and still there. Invisible and zero-sized;
       a load-time sweep is not worth the risk of removing something meaningful unless it matters.
+- [ ] **A layout guide's grab area is 7px wide and sits in front of what is under it.** A guide
+      crossing a small layer makes that part of the layer harder to click. Narrow the target, or let
+      pointer events through unless the pointer is within a pixel or two of the line.
 - [ ] **`Ctrl+0` resets to 100%**, not the app's 0.43 fit default. Change it if that feels wrong.
 - [ ] **A multi-page PDF places every page at the active page's size.** Exact for designs whose pages
       share one size — the normal case — but wrong the moment they do not.
@@ -77,8 +80,8 @@ through Phase 4 (identity, per-tenant designs, template sharing, hardening, conf
 work end to end out of our own API, and text marks render. Dev mode still needs no configuration.
 
 Next, in order:
-1. User-placed guides dragged out of the rulers — see "Next up".
-2. Then whatever looks most valuable from the smaller debts and known issues.
+1. Nothing is queued — the feature backlog is empty. Take whichever of the smaller debts and known
+   issues looks most valuable; the failing thumbnails are the only one with a visible symptom.
 
 Verify in the real browser, not just tsc, and read the §4 gotchas before writing browser tests — two of
 them (39: requestAnimationFrame never fires in a hidden tab; 33: the 900px responsive breakpoint) will

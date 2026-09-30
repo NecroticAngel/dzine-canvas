@@ -79,6 +79,10 @@ const withCleanCapture = async <T>(
       outline: none !important;
       border: none !important;
     }
+    /* A layout guide is the user's own measuring aid, not part of the design. */
+    [data-exporting="true"] [data-layout-guide] {
+      display: none !important;
+    }
   `;
   document.head.appendChild(style);
   try {

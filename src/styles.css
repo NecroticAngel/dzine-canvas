@@ -17,6 +17,7 @@ html[data-theme='light'] {
   --app-canvas-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
   --app-guide: #3d8eff;
   --app-grid-line: rgba(57, 76, 96, 0.16);
+  --app-layout-guide: #c026d3;
   --app-ruler-bg: #ffffff;
   --app-ruler-line: rgba(57, 76, 96, 0.32);
   --app-ruler-text: #5e6278;
@@ -40,6 +41,7 @@ html[data-theme='dark'] {
   --app-canvas-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
   --app-guide: #6ea8ff;
   --app-grid-line: rgba(255, 255, 255, 0.13);
+  --app-layout-guide: #e879f9;
   --app-ruler-bg: #14141c;
   --app-ruler-line: rgba(255, 255, 255, 0.26);
   --app-ruler-text: #b4b8c7;

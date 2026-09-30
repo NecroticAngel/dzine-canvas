@@ -69,6 +69,34 @@ type ResizeCorner = 'nw' | 'ne' | 'sw' | 'se';
 /** One alignment guide, in page coordinates. `x` is vertical, `y` horizontal. */
 type SnapGuide = { axis: 'x' | 'y'; position: number };
 
+/**
+ * A guide the user placed, in page units.
+ *
+ * A `SnapGuide` lives for the length of one drag; a layout guide belongs to the
+ * design, so it is stored on the page and travels with it — into copies, into
+ * templates, and into the saved file. LidoJS ignores the extra key.
+ *
+ * Guides are identified by their index in the page's list rather than by an id:
+ * they are a short, ordered list that only this code writes, and two guides on
+ * one axis at the same position are the same guide as far as anyone can tell.
+ */
+type LayoutGuide = { axis: 'x' | 'y'; position: number };
+
+/** A page plus the guides kept on it. */
+type PageWithGuides = SerializedPage & { guides?: LayoutGuide[] };
+
+/** The page's guides, ignoring anything malformed in a hand-edited file. */
+const pageGuides = (page: SerializedPage | undefined): LayoutGuide[] => {
+  const raw = (page as PageWithGuides | undefined)?.guides;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(
+    (guide): guide is LayoutGuide =>
+      !!guide &&
+      (guide.axis === 'x' || guide.axis === 'y') &&
+      Number.isFinite(guide.position),
+  );
+};
+
 /** `middle` is the vertical centre, to match `centre` being the horizontal one. */
 type AlignKind = 'left' | 'centre' | 'right' | 'top' | 'middle' | 'bottom';
 type DistributeAxis = 'horizontal' | 'vertical';
@@ -145,6 +173,17 @@ type EditorActions = {
   selectLayers: (ids: string[]) => void;
   /** Alignment guides shown while dragging; cleared on drop. */
   setGuides: (guides: SnapGuide[]) => void;
+  /**
+   * Add, move or remove the active page's layout guides.
+   *
+   * Takes an updater rather than a finished list because a guide drag patches on
+   * every pointer move, and the caller's copy of the pages is from its last
+   * render. Returns the list as it now stands, so a caller that appended can
+   * learn the index it landed at.
+   */
+  patchPageGuides: (
+    update: (guides: LayoutGuide[]) => LayoutGuide[],
+  ) => LayoutGuide[];
   /** Snapshot the page before a drag/resize so the whole gesture is one undo step. */
   beginInteraction: () => void;
   /** Close the snapshot opened by `beginInteraction`. */
@@ -430,18 +469,33 @@ export const resizePages = (
       };
     }
 
-    /** Every layer under the root, at any depth. */
-    const everyLayer = (() => {
-      const ids: string[] = [];
-      const visit = (id: string) => {
-        const layer = page.layers[id];
-        if (!layer) return;
-        ids.push(id);
-        for (const childId of layer.child ?? []) visit(childId);
-      };
-      for (const id of root?.child ?? []) visit(id);
-      return ids;
-    })();
+      // A guide keeps its share of its own axis, so one marking the middle stays
+      // on the middle and one marking a margin keeps a proportional margin. The
+      // clamped ends of the axis are the one place a guide cannot follow.
+      const placed = pageGuides(page);
+      if (placed.length) {
+        (page as PageWithGuides).guides = placed.map((guide) => {
+          const ratio = guide.axis === 'x' ? ratioX : ratioY;
+          const limit = guide.axis === 'x' ? target.width : target.height;
+          return {
+            axis: guide.axis,
+            position: Math.min(limit, Math.max(0, guide.position * ratio)),
+          };
+        });
+      }
+
+      /** Every layer under the root, at any depth. */
+      const everyLayer = (() => {
+        const ids: string[] = [];
+        const visit = (id: string) => {
+          const layer = page.layers[id];
+          if (!layer) return;
+          ids.push(id);
+          for (const childId of layer.child ?? []) visit(childId);
+        };
+        for (const id of root?.child ?? []) visit(id);
+        return ids;
+      })();
 
     const boxOf = (id: string) => {
       const props = (page.layers[id]?.props ?? {}) as Record<string, unknown>;
@@ -2975,6 +3029,26 @@ export const Editor = ({
     [markDirty],
   );
 
+     /**
+      * Rewrite the active page's layout guides.
+      *
+      * Reads through `pagesRef` so a drag that patches many times a second always
+      * builds on the last patch rather than on the pages its closure captured.
+      */
+     const patchPageGuides = useCallback(
+       (update: (guides: LayoutGuide[]) => LayoutGuide[]) => {
+         const next = clonePages(pagesRef.current);
+         const page = next[activePageRef.current] as PageWithGuides | undefined;
+         if (!page) return [];
+         page.guides = update(pageGuides(page));
+         pagesRef.current = next;
+         setPages(next);
+         markDirty();
+         return page.guides;
+       },
+       [markDirty],
+     );
+
   const patchLayerText = useCallback(
     (layerId: string, text: string) => {
       // Draft only while editing — pages update on flush/commit. Typing still
@@ -3326,6 +3400,7 @@ export const Editor = ({
         );
       },
       setGuides,
+      patchPageGuides,
       beginInteraction: () => {
         pendingUndo.current = clonePages(pagesRef.current);
       },
@@ -3732,6 +3807,7 @@ export const DesignFrame = ({ data }: { data?: SerializedPage[] }) => {
   const showRulers = canvasView?.showRulers ?? false;
   const showGrid = canvasView?.showGrid ?? false;
   const gridSize = canvasView?.gridSize ?? 20;
+  const snapGrid = canvasView?.snapGrid ?? false;
   const bootstrapped = useRef(false);
   // Layer clipboard. Stored as serialized trees; re-keyed on every paste so the
   // same entry can be pasted repeatedly without id collisions.
@@ -3965,6 +4041,83 @@ export const DesignFrame = ({ data }: { data?: SerializedPage[] }) => {
   // shading and the exported file cannot disagree.
   const selectionBox = selectionBounds(pages, activePage, selectedLayerIds);
 
+  /**
+   * Drag a layout guide, or pull a new one out of a ruler.
+   *
+   * `from` is the index of the guide being moved, or null when the gesture starts
+   * on a ruler — in which case the guide appears on the first move, so a click on
+   * a ruler does not leave behind a guide nobody asked for.
+   *
+   * The guide lands on grid lines when snapping is on, with the same reach a
+   * layer drag uses. The whole gesture is one undo step: the snapshot is taken
+   * before the first patch and closed on pointerup.
+   */
+  const startGuideDrag = (
+    axis: 'x' | 'y',
+    from: number | null,
+    event: ReactPointerEvent,
+  ) => {
+    if (ctx?.readOnly) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const pageNode = document.getElementById(`lidojs-page-${activePage}`);
+    if (!pageNode) return;
+    const limit = axis === 'x' ? size.width : size.height;
+    let index = from;
+    let moved = false;
+
+    /** Where the pointer is, in page units. */
+    const rawPosition = (ev: PointerEvent) => {
+      const rect = pageNode.getBoundingClientRect();
+      return axis === 'x'
+        ? (ev.clientX - rect.left) / scale
+        : (ev.clientY - rect.top) / scale;
+    };
+    const positionFor = (ev: PointerEvent) => {
+      const raw = rawPosition(ev);
+      if (!snapGrid) return raw;
+      return nearestGridLine(raw, gridSize, SNAP_THRESHOLD / scale) ?? raw;
+    };
+
+    const onMove = (ev: PointerEvent) => {
+      const position = positionFor(ev);
+      if (!moved) {
+        moved = true;
+        // Before the first patch, so undo restores the pre-drag state.
+        actions.beginInteraction();
+      }
+      if (index === null) {
+        const next = actions.patchPageGuides((current) => [
+          ...current,
+          { axis, position },
+        ]);
+        index = next.length - 1;
+        return;
+      }
+      const at = index;
+      actions.patchPageGuides((current) =>
+        current.map((guide, i) => (i === at ? { ...guide, position } : guide)),
+      );
+    };
+
+    const onUp = (ev: PointerEvent) => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      if (!moved || index === null) return;
+      const at = index;
+      // Dropped past the edge of the page — which is the way to reach a ruler —
+      // removes it, the gesture every design tool uses for this.
+      const raw = rawPosition(ev);
+      if (raw < 0 || raw > limit) {
+        actions.patchPageGuides((current) => current.filter((_, i) => i !== at));
+      }
+      actions.endInteraction();
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
+
   return (
     <div
       css={{
@@ -3994,6 +4147,11 @@ export const DesignFrame = ({ data }: { data?: SerializedPage[] }) => {
             pageSize={size}
             selection={selectionBox}
             pageId={`lidojs-page-${activePage}`}
+            onStartGuide={
+              ctx?.readOnly
+                ? undefined
+                : (event) => startGuideDrag('y', null, event)
+            }
           />
         </div>
       )}
@@ -4005,6 +4163,11 @@ export const DesignFrame = ({ data }: { data?: SerializedPage[] }) => {
             pageSize={size}
             selection={selectionBox}
             pageId={`lidojs-page-${activePage}`}
+            onStartGuide={
+              ctx?.readOnly
+                ? undefined
+                : (event) => startGuideDrag('x', null, event)
+            }
           />
         )}
         <div
@@ -4058,6 +4221,57 @@ export const DesignFrame = ({ data }: { data?: SerializedPage[] }) => {
                   }}
                 />
               )}
+              {pageGuides(page).map((guide, index) => (
+                <div
+                  key={`${guide.axis}-${index}`}
+                  data-layout-guide={guide.axis}
+                  onPointerDown={(event) =>
+                    startGuideDrag(guide.axis, index, event)
+                  }
+                  css={{
+                    position: 'absolute',
+                    // The line is a pixel wide on screen, but the thing you can
+                    // grab has to be wider than that or it is not draggable.
+                    ...(guide.axis === 'x'
+                      ? {
+                          left: guide.position - 3 / scale,
+                          top: 0,
+                          width: 7 / scale,
+                          height: size.height,
+                          cursor: ctx?.readOnly ? 'default' : 'ew-resize',
+                        }
+                      : {
+                          top: guide.position - 3 / scale,
+                          left: 0,
+                          height: 7 / scale,
+                          width: size.width,
+                          cursor: ctx?.readOnly ? 'default' : 'ns-resize',
+                        }),
+                    zIndex: 6,
+                  }}
+                >
+                  <div
+                    css={{
+                      position: 'absolute',
+                      ...(guide.axis === 'x'
+                        ? {
+                            left: 3 / scale,
+                            top: 0,
+                            width: 1 / scale,
+                            height: '100%',
+                          }
+                        : {
+                            top: 3 / scale,
+                            left: 0,
+                            height: 1 / scale,
+                            width: '100%',
+                          }),
+                      background: 'var(--app-layout-guide)',
+                      pointerEvents: 'none',
+                    }}
+                  />
+                </div>
+              ))}
               {guides.map((guide) => (
             <div
               key={`${guide.axis}-${guide.position}`}
@@ -4072,7 +4286,7 @@ export const DesignFrame = ({ data }: { data?: SerializedPage[] }) => {
                       height: size.height,
                       background: 'var(--app-guide)',
                       pointerEvents: 'none',
-                      zIndex: 6,
+                      zIndex: 7,
                     }
                   : {
                       position: 'absolute',
@@ -4082,7 +4296,7 @@ export const DesignFrame = ({ data }: { data?: SerializedPage[] }) => {
                       width: size.width,
                       background: 'var(--app-guide)',
                       pointerEvents: 'none',
-                      zIndex: 6,
+                      zIndex: 7,
                     }
               }
             />
@@ -4192,12 +4406,15 @@ const RulerStrip = ({
   pageSize,
   selection,
   pageId,
+  onStartGuide,
 }: {
   axis: 'x' | 'y';
   scale: number;
   pageSize: PageSize;
   selection: SelectionBox | null;
   pageId: string;
+  /** Pulling on a ruler is how a guide is created. */
+  onStartGuide?: (event: ReactPointerEvent) => void;
 }) => {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -4294,11 +4511,13 @@ const RulerStrip = ({
     <div
       ref={wrapRef}
       data-ruler={axis}
+      onPointerDown={onStartGuide}
       css={{
         position: 'relative',
         flexShrink: 0,
         overflow: 'hidden',
         background: 'var(--app-ruler-bg)',
+        cursor: onStartGuide ? (horizontal ? 'ns-resize' : 'ew-resize') : undefined,
         borderRight: horizontal ? undefined : '1px solid var(--app-border)',
         borderBottom: horizontal ? '1px solid var(--app-border)' : undefined,
         width: horizontal ? 'auto' : RULER_THICKNESS,

@@ -871,6 +871,40 @@ Verifying this turned up gotcha 39. Fixing it collapsed five copies of the same 
 `AlignToolbar` are each about twenty-five lines shorter.
 
 
+### Layout guides — ✅ DONE
+The rulers could only measure. Now pulling on one creates a persistent guide: drag from the top ruler
+for a horizontal line, from the left ruler for a vertical one, drag a line to move it, and drop it past
+the page edge — which is how you reach a ruler — to remove it.
+
+- [x] **A guide is part of the design, not the session.** It lives on the page (`page.guides`), so it
+      travels into copies, templates and the saved file: LidoJS ignores the extra key and
+      `clonePages`'s JSON round-trip preserves it. Verified end to end — an exported JSON has
+      `pageKeys: ["layers","guides"]`, and after a reload the reopened design still shows both guides
+      at 520 and 280.
+- [x] Guides are **identified by their index** in that short list rather than by an id: only this code
+      writes them, and two on one axis at the same position are the same guide as far as anyone can
+      tell.
+- [x] **Dragging** patches the page live, and each gesture is **one undo step** — `beginInteraction`
+      snapshots before the first patch and `endInteraction` closes it on pointerup, so the header's
+      undo put a deleted guide back at exactly 520.
+- [x] The position **snaps to the grid** when snapping is on, with the same reach a layer drag uses.
+      Verified on both axes: a pull aimed at 288 landed on 280, a move aimed at 512 landed on 520.
+- [x] **Excluded from every capture.** A guide is a measuring aid, not artwork, so `withCleanCapture`
+      hides `[data-layout-guide]` for the duration — verified by exporting a blank page carrying two
+      guides and counting pixels: none that were not white. (The grid is invisible in the dark theme
+      at 13% white alpha, which is what makes that test decisive.)
+- [x] Its own colour (`--app-layout-guide`, violet, both themes) so a persistent guide is never
+      mistaken for the transient blue snap line, and a 7px grab area around a 1px line, because a 1px
+      target is not draggable.
+- Magic resize scales a guide by its own axis, so one marking the middle stays on the middle.
+
+**Two things to know.** That 7px grab area does sit in front of whatever is under it, so a guide
+crossing a small layer makes that part of the layer harder to click; narrowing the target, or letting
+clicks through until the guide is hovered, is the fix if it ever annoys anyone. And the drag is gated
+on `readOnly` so a viewer gets no drag cursor — the write is protected regardless, because every guide
+patch goes through the same `setPages` a read-only editor replaces with a no-op, but that particular
+cursor was not exercised in a viewer.
+
 ### Cleanups completed
 - [x] `actions.addPage()` now matches the design: it takes the size from the page you are on instead
       of appending a fixed 1640×924. Verified in the browser — adding a page to a 1080×1350 design
