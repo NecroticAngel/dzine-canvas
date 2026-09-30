@@ -241,7 +241,7 @@ with them, and creates its own designs. Decisions already taken: orgs with multi
   parse and written from another, so it was discarded and the banner never appeared. See gotcha 19.
 
 **Next**
-1. Tier 7 continued: brand kit, then magic resize. Share links are done.
+1. Tier 7: magic resize — the last differentiator, and the biggest.
 2. Render text layers properly, so bold and italic marks work and `/texts` presets stop looking
    identical (see the gaps list under the font work).
 3. Export selected-layer-only, which needs the layer renderer to stamp an id.
@@ -638,11 +638,49 @@ declares `getFonts` in its config type and never calls it. Every text layer rend
 
 
 ### Tier 7 — differentiators
-- [ ] Magic resize (change canvas size, rescale/reflow layers) — Canva's killer feature.
-- [ ] Brand kit (saved palette + fonts).
+- [ ] Magic resize (change canvas size, rescale/reflow layers) — Canva's killer feature. **Next.**
+- [x] **Brand kit** — the colours and fonts a tenant uses, saved once and shared by the team.
 - [x] "Save as template" exists (Phase 3): `POST /templates` with a `sourceDesignId`, and a client's
       templates are private to its tenant. An admin can publish a shared one.
 - [x] **Share links** — a read-only URL to one design, for somebody with no account.
+
+### Brand kit — ✅ DONE
+- [x] `brand_kits` table, one row per tenant, replaced wholesale on save. Per tenant rather than per
+      member because a brand belongs to the organisation — sharing it is the whole point of saving it.
+      The colours and fonts are JSON arrays rather than child tables: they are read and written as a
+      complete list, never queried by element, and a swatch has no identity worth a row.
+- [x] `GET /brand` for any member, `PUT /brand` admin-only — the same rule as publishing a template,
+      since every design that applies the kit inherits whatever it says. Both are audited.
+- [x] Validation refuses rather than silently cleaning. A colour must be six-digit hex (normalised to
+      lowercase, de-duplicated) and a font must be a family **from the catalogue**, because a family
+      that is not in it renders in the fallback for ever with nothing to say why. Caps: 24 colours, 12
+      fonts. Verified: 7 rejections (bad hex, unknown family, non-array, null, 30 colours, 13 fonts,
+      empty-is-valid).
+- [x] A **Brand** tab in the sidebar: swatches and brand fonts, one click each. The font list renders
+      each family *in its own face*, so the list doubles as proof the font is available rather than
+      merely remembered.
+- [x] Applying targets the selection: a text layer takes a colour or a font, a shape or line takes the
+      fill, a QR code takes its dark colour. With no suitable selection a colour is copied instead and
+      the panel says which it did — the hint above the swatches changes with the selection, so the
+      behaviour is never a surprise. Table cells are deliberately excluded: their colours are per cell,
+      and "apply to the whole table" is not what clicking a swatch means.
+- [x] `updateTextAttrs` is now an editor action. The text document has a shape and its attributes live
+      inside it, so the brand panel applies a family through the same code the text toolbar uses rather
+      than rebuilding the document a second time.
+- [x] Verified end to end: applied colour `rgb(0,0,0)` → `rgb(255,136,0)` and family Roboto → Oswald on
+      a selected layer, both reaching the saved design JSON, and undo stepping back through them
+      (Oswald → Roboto → black → the layer itself). The applies are ordinary commits, so they are
+      undoable and saved like any other edit.
+- Also fixed here: the clipboard fallback used `window.prompt`, which **blocks the whole editor**
+      mid-click. Both places that did it (this panel and the share dialog) now report the value instead.
+      Where the clipboard is unavailable — an insecure origin, or a browser that refuses permission —
+      the panel says "Could not copy — the value is #ff8800", which is the honest outcome.
+
+**Note on `window.alert`/`window.confirm`:** the editor header, the pages panel and the welcome page
+still use them for delete confirmations and error notices. That is pre-existing and deliberate, not a
+fallback that can fire unexpectedly, but it is the same blocking behaviour worth replacing with proper
+dialogs if the UI is ever tidied.
+
 
 ### Share links — ✅ DONE
 The one grant in the system that does not require a login, because the recipient is a client's

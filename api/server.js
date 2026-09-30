@@ -32,6 +32,7 @@ import {
   designOwner,
   ensureTenant,
   getAsset,
+  getBrandKit,
   getDesign,
   getTemplate,
   getTenant,
@@ -55,6 +56,7 @@ import {
   revokeDesignShareLinks,
   revokeTemplateGrant,
   upsertAsset,
+  upsertBrandKit,
   upsertDesign,
   upsertTemplate,
 } from './db.js';
@@ -1970,6 +1972,83 @@ api.get('/fonts/files/:name', (req, res) => {
   res.setHeader('Content-Type', 'font/ttf');
   res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
   res.sendFile(file);
+});
+
+/* --- Brand kit -----------------------------------------------------------
+ * The colours and fonts one tenant uses everywhere, saved once and shared by
+ * the whole team. Writes are admin-only, like publishing a template or inviting
+ * a member: it is the organisation's brand, and every design that applies it
+ * inherits whatever it says.
+ *
+ * Reads are open to the tenant, because the panels that offer the kit are used
+ * by everybody.
+ * --------------------------------------------------------------------- */
+
+/** A swatch is a six-digit hex; anything else is not a colour we can show. */
+const BRAND_COLOUR_PATTERN = /^#[0-9a-f]{6}$/i;
+const BRAND_MAX_COLOURS = 24;
+const BRAND_MAX_FONTS = 12;
+
+/**
+ * Validate and de-duplicate a kit's colours.
+ *
+ * Returns null rather than a partially-cleaned list: a save that silently drops
+ * half of what was sent is worse than one that refuses, because the user cannot
+ * tell which half they lost.
+ */
+const normaliseBrandColours = (value) => {
+  if (!Array.isArray(value) || value.length > BRAND_MAX_COLOURS) return null;
+  const colours = value.map((entry) => String(entry ?? '').trim().toLowerCase());
+  if (!colours.every((colour) => BRAND_COLOUR_PATTERN.test(colour))) return null;
+  return [...new Set(colours)];
+};
+
+/**
+ * Validate a kit's fonts against the catalogue.
+ *
+ * A family that is not in it would render in the fallback for ever with nothing
+ * to indicate why, and the panel would offer a font the design cannot show.
+ */
+const normaliseBrandFonts = (value) => {
+  if (!Array.isArray(value) || value.length > BRAND_MAX_FONTS) return null;
+  const known = new Set(bundledFonts().fonts.map((font) => font.name));
+  const fonts = value.map((entry) => String(entry ?? '').trim());
+  if (!fonts.every((family) => known.has(family))) return null;
+  return [...new Set(fonts)];
+};
+
+api.get('/brand', (req, res) => {
+  const tenantId = tenantOf(req);
+  ensureTenant(db, tenantId);
+  res.json(getBrandKit(db, tenantId));
+});
+
+api.put('/brand', writeLimit, requireAdmin, (req, res) => {
+  const tenantId = tenantOf(req);
+  ensureTenant(db, tenantId);
+  const colours = normaliseBrandColours(req.body?.colours);
+  const fonts = normaliseBrandFonts(req.body?.fonts);
+  if (!colours || !fonts) {
+    res.status(400).json({
+      error: `colours must be up to ${BRAND_MAX_COLOURS} hex values and fonts up to ${BRAND_MAX_FONTS} families from the catalogue`,
+      code: 'invalid-brand-kit',
+    });
+    return;
+  }
+  upsertBrandKit(db, {
+    tenantId,
+    colours,
+    fonts,
+    updatedAt: Date.now(),
+    updatedBy: req.identity.member.id,
+  });
+  audit(req, {
+    action: 'brand.update',
+    targetType: 'tenant',
+    targetId: tenantId,
+    detail: { colours: colours.length, fonts: fonts.length },
+  });
+  res.json(getBrandKit(db, tenantId));
 });
 
 app.use(`${BASE_PATH}/api`, api);

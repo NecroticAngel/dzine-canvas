@@ -5,6 +5,7 @@ import PencilIcon from '@duyank/icons/regular/Pencil';
 import PiggyBankIcon from '@duyank/icons/regular/PiggyBank';
 import QrCodeIcon from '@duyank/icons/regular/QrCode';
 import SquareIcon from '@duyank/icons/regular/Square';
+import SwatchesIcon from '@duyank/icons/regular/Swatches';
 import TableIcon from '@duyank/icons/regular/Table';
 import TextTIcon from '@duyank/icons/regular/TextT';
 import UploadIcon from '@duyank/icons/regular/Upload';
@@ -16,6 +17,7 @@ import { DrawContent } from './DrawContent';
 import { FrameContent } from './FrameContent';
 import { GraphicContent } from './GraphicContent';
 import { ImageContent } from './ImageContent';
+import { BrandContent } from './BrandContent';
 import { QrCodeContent } from './QrCodeContent';
 import { ShapeContent } from './ShapeContent';
 import { TableContent } from './TableContent';
@@ -28,6 +30,10 @@ const tabs = [
   {
     name: 'Template',
     icon: <LayoutIcon />,
+  },
+  {
+    name: 'Brand',
+    icon: <SwatchesIcon />,
   },
   {
     name: 'Text',
@@ -126,6 +132,7 @@ export const Sidebar = () => {
               />
             )}
             {tab === 'Text' && <TextContent onClose={handleCloseTab} />}
+            {tab === 'Brand' && <BrandContent onClose={handleCloseTab} />}
             {tab === 'Frame' && <FrameContent onClose={handleCloseTab} />}
             {tab === 'Image' && <ImageContent onClose={handleCloseTab} />}
             {tab === 'Graphic' && <GraphicContent onClose={handleCloseTab} />}

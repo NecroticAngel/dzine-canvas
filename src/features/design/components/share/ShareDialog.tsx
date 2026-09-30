@@ -48,6 +48,7 @@ export const ShareDialog: FC<ShareDialogProps> = ({
     'loading',
   );
   const [copied, setCopied] = useState(false);
+  const [copyFailed, setCopyFailed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -69,24 +70,24 @@ export const ShareDialog: FC<ShareDialogProps> = ({
   // Reset the confirmation when the link changes underneath it.
   useEffect(() => {
     setCopied(false);
+    setCopyFailed(false);
   }, [link?.token]);
 
   const copy = useCallback(() => {
     if (!link) return;
     const url = displayUrl(link.token);
-    const done = () => setCopied(true);
-    // `navigator.clipboard` is unavailable on insecure origins, which includes
-    // a LAN address a colleague might be testing on, so fall back rather than
-    // silently doing nothing.
-    if (navigator.clipboard?.writeText) {
-      void navigator.clipboard.writeText(url).then(done).catch(() => {
-        window.prompt('Copy this link', url);
-        done();
-      });
+    // `navigator.clipboard` is unavailable on insecure origins, which includes a
+    // LAN address a colleague might be testing on. There is no blocking prompt
+    // as a fallback: the field is on screen and selectable, so failing to copy
+    // is a message, not a reason to freeze the page.
+    if (!navigator.clipboard?.writeText) {
+      setCopyFailed(true);
       return;
     }
-    window.prompt('Copy this link', url);
-    done();
+    void navigator.clipboard
+      .writeText(url)
+      .then(() => setCopied(true))
+      .catch(() => setCopyFailed(true));
   }, [link]);
 
   const revoke = useCallback(() => {
@@ -226,6 +227,12 @@ export const ShareDialog: FC<ShareDialogProps> = ({
                 {copied ? 'Copied' : 'Copy'}
               </button>
             </div>
+            {copyFailed && (
+              <p css={{ color: '#ff8f8f', fontSize: 12, margin: '8px 0 0' }}>
+                Could not copy automatically — select the field and copy it by
+                hand.
+              </p>
+            )}
             <div
               css={{
                 display: 'flex',

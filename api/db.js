@@ -151,6 +151,23 @@ CREATE TABLE IF NOT EXISTS share_links (
 );
 CREATE INDEX IF NOT EXISTS share_links_by_design
   ON share_links(design_id, revoked_at);
+
+-- The brand kit: the colours and fonts a tenant uses everywhere.
+--
+-- One row per tenant, replaced wholesale on save. Per tenant rather than per
+-- member because a brand belongs to the organisation — sharing it with the team
+-- is the entire point of saving it.
+--
+-- Stored as JSON arrays rather than child tables: they are read and written as
+-- a complete list, never queried by element, and a swatch has no identity worth
+-- a row of its own.
+CREATE TABLE IF NOT EXISTS brand_kits (
+  tenant_id  TEXT PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+  colours    TEXT NOT NULL DEFAULT '[]',
+  fonts      TEXT NOT NULL DEFAULT '[]',
+  updated_at INTEGER NOT NULL,
+  updated_by TEXT
+);
 `;
 
 /** Open (creating if needed) the metadata database under the storage root. */
@@ -326,6 +343,60 @@ export const revokeDesignShareLinks = (db, designId) =>
       'UPDATE share_links SET revoked_at = ? WHERE design_id = ? AND revoked_at IS NULL',
     )
     .run(Date.now(), designId).changes;
+
+/* --- Brand kit ---------------------------------------------------------- */
+
+/** Tolerant of anything that is not a list of strings, since the column is free text. */
+const parseStringArray = (value) => {
+  try {
+    const parsed = JSON.parse(value ?? '[]');
+    return Array.isArray(parsed) ? parsed.filter((entry) => typeof entry === 'string') : [];
+  } catch {
+    return [];
+  }
+};
+
+/**
+ * The tenant's brand kit.
+ *
+ * Always returns a kit, empty if none was saved, so no caller has to branch on
+ * null for what is only ever a list of two things.
+ */
+export const getBrandKit = (db, tenantId) => {
+  const row = db
+    .prepare(
+      `SELECT colours, fonts, updated_at AS updatedAt, updated_by AS updatedBy
+         FROM brand_kits
+        WHERE tenant_id = ?`,
+    )
+    .get(tenantId);
+  return {
+    colours: parseStringArray(row?.colours),
+    fonts: parseStringArray(row?.fonts),
+    updatedAt: row?.updatedAt ?? null,
+    updatedBy: row?.updatedBy ?? null,
+  };
+};
+
+export const upsertBrandKit = (db, record) => {
+  db
+    .prepare(
+      `INSERT INTO brand_kits (tenant_id, colours, fonts, updated_at, updated_by)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(tenant_id) DO UPDATE SET
+         colours    = excluded.colours,
+         fonts      = excluded.fonts,
+         updated_at = excluded.updated_at,
+         updated_by = excluded.updated_by`,
+    )
+    .run(
+      record.tenantId,
+      JSON.stringify(record.colours ?? []),
+      JSON.stringify(record.fonts ?? []),
+      record.updatedAt ?? Date.now(),
+      record.updatedBy ?? null,
+    );
+};
 
 /* --- Members ------------------------------------------------------------
  * One row per human login. `external_id` is the IdP subject claim; email is

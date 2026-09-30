@@ -168,6 +168,14 @@ type EditorActions = {
   updateLayerText: (layerId: string, text: string) => void;
   /** Patch arbitrary layer props (e.g. a QrCodeLayer's payload and colours). */
   updateLayerProps: (layerId: string, patch: Record<string, unknown>) => void;
+  /**
+   * Patch a text layer's block attributes — family, size, colour, alignment.
+   *
+   * The document has a shape and the attribute lives inside it, so callers that
+   * want to change type should not be rebuilding it. Every block is patched, so
+   * a multi-line layer keeps one family and one colour throughout.
+   */
+  updateTextAttrs: (layerId: string, patch: Record<string, unknown>) => void;
   setSelectedCell: (cell: TableCellRef | null) => void;
   updateTableCell: (
     layerId: string,
@@ -1778,18 +1786,8 @@ const TextToolbar = () => {
   const align = String(attrs.textAlign ?? 'center');
 
   /** Every block, so a multi-line layer keeps one family throughout. */
-  const patchAttrs = (patch: Record<string, unknown>) => {
-    const content = Array.isArray(doc?.content) ? doc.content : [];
-    ctx.actions.updateLayerProps(id, {
-      doc: {
-        type: doc?.type ?? 'doc',
-        content: content.map((block) => ({
-          ...block,
-          attrs: { ...(block.attrs ?? {}), ...patch },
-        })),
-      },
-    });
-  };
+  const patchAttrs = (patch: Record<string, unknown>) =>
+    ctx.actions.updateTextAttrs(id, patch);
 
   const controlCss = {
     height: 28,
@@ -2551,6 +2549,32 @@ export const Editor = ({
   );
 
   /**
+   * Patch the block attributes of a text layer.
+   *
+   * Read-modify-write of the document's first-level blocks, through the same
+   * commit as any other edit so the change joins the undo history and is saved.
+   */
+  const patchTextAttrs = useCallback(
+    (layerId: string, patch: Record<string, unknown>) => {
+      const page = pagesRef.current[activePageRef.current];
+      const doc = page?.layers?.[layerId]?.props?.doc as
+        | { type?: string; content?: { attrs?: Record<string, unknown> }[] }
+        | undefined;
+      const content = Array.isArray(doc?.content) ? doc.content : [];
+      patchLayerProps(layerId, {
+        doc: {
+          type: doc?.type ?? 'doc',
+          content: content.map((block) => ({
+            ...block,
+            attrs: { ...(block.attrs ?? {}), ...patch },
+          })),
+        },
+      });
+    },
+    [patchLayerProps],
+  );
+
+  /**
    * Apply a change to one table cell.
    *
    * Committed through `commit`, so cell edits join the undo history and are
@@ -2919,6 +2943,7 @@ export const Editor = ({
       updateLayerBox: patchLayerLive,
       updateLayerText: patchLayerText,
       updateLayerProps: patchLayerProps,
+      updateTextAttrs: patchTextAttrs,
       setSelectedCell,
       updateTableCell: patchTableCell,
       registerTextInput: (el) => {
@@ -3048,6 +3073,7 @@ export const Editor = ({
     patchLayerLive,
     patchLayerText,
     patchLayerProps,
+    patchTextAttrs,
     patchTableCell,
     persistCurrent,
     refreshDesignList,
