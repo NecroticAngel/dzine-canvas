@@ -89,6 +89,11 @@ Mounted at `` app.use(`${BASE_PATH}/api`, api) ``.
 HEAD. The feature backlog is **empty**: every tier in §5 is done, and the multi-tenant build in §3.5
 is complete through Phase 4 plus conflict handling. What is left is listed in `ideas_todo.md`.
 
+**Repo size:** ~192 MB packed, about 175 MB of it one 58 MB `output-from-templates.pdf` committed
+three separate times. It is untracked and ignored now, so it will not grow. Removing it needs a
+history rewrite (force-push, which invalidates existing clones) — a deliberate non-goal so far, not
+something anyone forgot to do.
+
 **Upstream also carries** `docs/plans/multi-tenant.md` — the original plan and its phase-by-phase
 progress — and `src/vendor/design-editor/index.tsx`, which is where most editor behaviour lives.
 
@@ -401,10 +406,12 @@ no longer drops the operation (gotcha 18).
     selection change, with rAF used only to *follow* a moving layer: a frame is an optimisation, and
     anything the user can see must not depend on one arriving. The same trap is inside
     `html-to-image`: `createImage` resolves **every** capture from inside a rAF callback
-    (`img.decode().then(() => requestAnimationFrame(() => resolve(img)))`), so an export or an
-    autosave thumbnail started while the tab was in the background waited *forever* — no error, no
-    file, and the header stuck on "Exporting…". `withVisibleFrames` runs a capture with frames driven
-    by a timer instead, which is the only way to make that library finish in a tab that is not
+    (`img.decode().then(() => requestAnimationFrame(() => resolve(img)))`). A capture started in a
+    background tab therefore never finishes, and it fails in two different shapes: an **export** is
+    awaited, so the header sat on "Exporting…" with no file and nothing thrown, while the **autosave
+    thumbnail** is fired off with `void` (deliberately — a failed capture must not fail a save), so the
+    design saved with no preview and nothing said why. `withVisibleFrames` runs a capture with frames
+    driven by a timer instead, which is the only way to make that library finish in a tab that is not
     drawing.
 40. **`html-to-image` multiplies `canvasWidth` by `pixelRatio`.** `toCanvas` computes
     `canvas.width = (options.canvasWidth || width) * ratio`, so passing a canvas size *and* a pixel
@@ -439,7 +446,13 @@ no longer drops the operation (gotcha 18).
     design this browser made and has not managed to upload yet, and wrong for one it got **from** the
     server — the flag that tells them apart was already on the record (`remote`), so the fix is one
     guard: a `remote` design missing from the server's list is dropped, not re-uploaded. Worth
-    remembering because it is invisible until the count stops going down.
+    remembering because it is invisible until the count stops going down — and because there were
+    **two** paths that did it, in two branches of the same function: the one that runs when the server
+    *has* designs, and the "nothing in the account yet" branch that an **emptied** account lands in.
+    Fixing only the first leaves the hole exactly where you are about to put your foot: empty the
+    gallery and the next page load refills it. Both now drop `remote` designs, and the empty branch
+    clears the library keys outright when nothing is left, because `readStore` treats an empty list as
+    no store at all and the next boot mints a fresh placeholder — the shape a first run has.
 44. **Editing a file while the dev server is running can leave two copies of the vendored editor in the
     page.** After a run of edits, `Sidebar` and `PagesPanel` threw `useEditor must be used inside
     <Editor>` and the stacks showed *two different* module URLs for the same `design-editor/index.tsx`
@@ -448,13 +461,14 @@ no longer drops the operation (gotcha 18).
     the editor with zero errors. Reload the page before believing an error like this, and before
     trusting a browser test that runs after an edit.
 
-**State of the library (context, not a TODO).** The test designs are gone: 24 → 4, the twenty deleted
-through the API (`Square` ×7, `Blank White` ×8, `Portrait`, `tet`, `Facebook Profile Photo`,
-`e75a61c1` and the mixed-size PDF test design), with a JSON + thumbnail backup in
-`%TEMP%\dzine-designs-backup-20261002-120818`. The four that remain are all `Starter D-Zine Canvas`
-copies from 30 Sep — kept because the cleanup list named only `e75a61c1` — and `Portrait` and
-`Starter D-Zine Canvas` were both touched during font verification. No design carries a **Conflict**
-banner any more; that decision was taken. See `ideas_todo.md` for what is left.
+**State of the library (context, not a TODO).** The gallery is **empty** — 0 designs, with both
+templates still shared, so a new design is one click away and the welcome page shows its own "No designs
+yet" empty state. Everything the account had was deleted through the API and backed up first: 24 test
+designs in total (`Square` ×7, `Blank White` ×8, `Portrait`, `tet`, `Facebook Profile Photo`,
+`e75a61c1`, four `Starter D-Zine Canvas` copies and the mixed-size PDF test design), with a JSON +
+thumbnail backup of each batch in `%TEMP%\dzine-designs-backup-20261002-120818` and
+`%TEMP%\dzine-designs-backup-20261002-123009` (~230 KB all told). No design carries a **Conflict**
+banner. Emptying it is what found the resurrection bug in gotcha 43 — twice.
 
 ---
 
@@ -493,7 +507,9 @@ restack) plus the `addLayerTrees` bulk action and the three clipboard helpers (`
       siblings can't leapfrog).
 - [x] Existing Ctrl+S / Delete / Backspace still work (regression-checked).
 
-*Note:* `Ctrl+0` resets to **100%**, not the app's 0.43 fit default (see `ideas_todo.md`).
+*Note:* `Ctrl+0` is the conventional binding — it resets to **100%**, not the app's 0.43 fit default.
+Kept deliberately: `Ctrl+=` / `Ctrl+-` step through the zooms and a design still *opens* at the fit
+zoom, so nothing is lost by having the reset mean the standard thing.
 
 ### `DrawToolbar` — verified end to end
 
@@ -946,12 +962,13 @@ the page edge — which is how you reach a ruler — to remove it.
 
 **Two things to know.** That 7px grab area does sit in front of whatever is under it, so a guide
 crossing a small layer makes that part of the layer harder to click; narrowing the target, or letting
-clicks through until the guide is hovered, is the fix if it ever annoys anyone. And the drag is gated
+clicks through until the guide is hovered, is the fix if it ever annoys anyone — **accepted as-is** for
+now, because a thinner target trades a rare annoyance for a common one. And the drag is gated
 on `readOnly` so a viewer gets no drag cursor — the write is protected regardless, because every guide
 patch goes through the same `setPages` a read-only editor replaces with a no-op, but that particular
 cursor was not exercised in a viewer.
 
-### Design previews — how they are made, and the two ways one goes missing
+### Design previews — how they are made, and how one goes missing
 A thumbnail is captured **in the browser** on every save and uploaded with the design
 (`captureThumbnail` → `setDesignThumbnail`), deliberately not awaited: a failed capture must never
 surface as a failed save. A design started from a template instead inherits the template's own preview
@@ -972,12 +989,14 @@ file, which is an SVG, so the thumbs directory holds both JPEG captures and SVG 
       pointing one at a 404 for real: the image went `display: none` and the placeholder underneath
       stayed visible at 211px, while the untouched cards still painted their previews over it.
 
-**The remaining way to have no preview is a save made while the tab is hidden.** `captureThumbnail`
-needs an animation frame and a background tab never runs one, so the capture is skipped and the design
-is saved without one — which is how two designs in the library came to have none, both created in
-background tabs while this work was being verified. It self-heals on the next save in a visible tab,
-and a fresh design edited in the foreground gets its preview end to end (verified: `image/jpeg`,
-4964 bytes).
+**A save made while the tab is hidden used to leave no preview — fixed.** `captureThumbnail` goes
+through `html-to-image`, which resolves every capture from inside a `requestAnimationFrame` callback,
+and a background tab runs no frames: the capture never settled, so the design saved without a preview
+and the save itself never mentioned it. That is how two designs in the library came to have none, both
+created in background tabs while this work was being verified. Captures now run inside
+`withVisibleFrames`, which drives frames from a timer for their duration, so a background save gets its
+preview like any other (verified: `captureThumbnail` resolves in a hidden tab, and a foreground save
+still produces an `image/jpeg` of 4964 bytes).
 
 ### Cleanups completed
 - [x] `actions.addPage()` now matches the design: it takes the size from the page you are on instead
@@ -988,6 +1007,14 @@ and a fresh design edited in the foreground gets its preview end to end (verifie
       requires an error `code`, always re-throws, and raises a blocking notice for 401/403.
 - [x] `EditorHeader`'s theme toggle is hidden below 900px again, as the old rule did before it was
       lost; the same toggle is on the welcome page, and the editor header needs the room.
+- [x] **The zero-sized draw layers are gone with the test designs** — verified by reading every stored
+      design back and looking for a layer whose `boxSize` is 0×0: none left, so the load-time sweep the
+      item contemplated is not needed. (It was going to be a defensive delete of "something
+      meaningless", which is the kind of fix that eventually eats a real layer.)
+- [x] **`Ctrl+0` kept at 100%** rather than the fit zoom — the standard binding, noted where the zoom
+      shortcuts are documented in Tier 1.
+- [x] **Repo history left at ~192 MB** as a deliberate non-goal, now recorded in §3 so it does not read
+      as an oversight.
 
-The remaining deferred items — the workspace root, `DrawContent`'s geometry, the junk 0×0 layers —
-are in `ideas_todo.md`.
+The remaining open items — the `NecroZine_Next` workspace root (an editor setting, so it needs doing by
+hand) and `DrawContent`'s hard-coded geometry — are in `ideas_todo.md`.

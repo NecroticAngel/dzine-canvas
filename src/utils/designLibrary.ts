@@ -641,10 +641,23 @@ export const hydrateLibrary = (): Promise<void> => {
     );
 
     if (!remote.length) {
-      // Nothing in the account yet, so push whatever this browser has.
-      for (const design of store?.designs ?? []) {
-        if (queuedDeletes.has(design.id)) continue;
-        markDirty(design.id, 'upsert');
+      // Nothing in the account yet. Anything this browser made and has not
+      // uploaded gets pushed up — but a design it was *given* by the server is
+      // not "not uploaded yet", it is "deleted there", so it is dropped instead
+      // of being re-uploaded. This is the branch an emptied account lands in, so
+      // without that the gallery would keep showing designs with no thumbnails
+      // behind them, and put them back on the server on the next save.
+      const designs = (store?.designs ?? []).filter((design) => !design.remote);
+      for (const design of designs) markDirty(design.id, 'upsert');
+      if (designs.length !== (store?.designs ?? []).length) {
+        if (designs.length) {
+          writeStore({ version: 1, activeId: designs[0].id, designs });
+        } else {
+          // `readStore` treats an empty list as no store at all, and the next
+          // boot mints a fresh placeholder — the same shape a first run has.
+          localStorage.removeItem(LIBRARY_KEY);
+          localStorage.removeItem(LEGACY_KEY);
+        }
       }
       return;
     }

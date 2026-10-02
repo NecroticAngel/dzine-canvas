@@ -2,56 +2,22 @@
 
 > **Open work only.** What the app is, how to run it, everything that has been built, and every
 > gotcha learned building it live in [`App_Overview.md`](./App_Overview.md) — read that first, and read
-> its §4 before writing any browser test.
->
-> The feature backlog is empty. Nothing here is on fire: this is the honest list of what is missing,
-> what is rough, and what was deliberately deferred.
+> its §4 before writing any browser test. Anything finished, accepted or deliberately deferred is
+> recorded there as well (§3 and the end of §5), which is what keeps this file short.
 
 ---
 
-## Nothing queued
+## Open
 
-The feature backlog is empty: grid snapping and layout guides were the last two items, and both are
-done (see `App_Overview.md`). What is left is the list below. None of it shows up as a symptom in
-normal use.
-
-## Smaller debts
-
+- [ ] **Remove the `NecroZine_Next` root from the VS Code workspace.** It lives in the editor's
+      workspace file, not in this repo, and it has already caused one wrong-project edit. **This one
+      has to be done by hand** — *File → Add Folder to Workspace*, or the `.code-workspace` file.
 - [ ] **Theme `DrawContent`'s hard-coded geometry** (`left: 72`, `top: 44`, `120×250`). Cosmetic: it
-      anchors over the selection, so it does not follow light/dark restyling.
-- [ ] **Two junk 0×0 draw layers** are saved into a design and still there. Invisible and zero-sized;
-      a load-time sweep is not worth the risk of removing something meaningful unless it matters.
-- [ ] **A layout guide's grab area is 7px wide and sits in front of what is under it.** A guide
-      crossing a small layer makes that part of the layer harder to click. **Accepted for now:**
-      narrowing it buys very little, and the alternative — putting the line behind the content — means
-      a guide that crosses a busy area can no longer be picked up to move or delete it. Recorded in
-      §4 of the overview rather than left as work.
-- [x] **`Ctrl+0` resets to 100%**, not the app's 0.43 fit default. **Keeping it:** that is the binding
-      everywhere else (`Ctrl+=` / `Ctrl+-` step, `Ctrl+0` is 100%), and a design still *opens* at the
-      fit zoom, so nothing is lost.
+      floats over the selection, so it does not follow light/dark restyling. Those coordinates are the
+      ones §3 lists as working and verified, which is where they came from.
 
-## Known issues
-
-- [ ] **Repo history is ~192 MB packed**, about 175 MB of it one 58 MB `output-from-templates.pdf`
-      committed three separate times. It is untracked and ignored now, so it will not grow. Removing it
-      needs a history rewrite (force-push, invalidates existing clones) — a deliberate non-goal so far.
-
-## Housekeeping
-
-- [x] **Test designs cleared** — 24 → 4, the twenty deleted through the API: `Square` ×7, `Blank White`
-      ×8, `Portrait`, `tet`, `Facebook Profile Photo`, `e75a61c1` (1080×1920) and the mixed-size PDF
-      test design. A JSON + thumbnail backup is in `%TEMP%\dzine-designs-backup-20261002-120818`
-      (~115 KB) if one turns out to have been wanted. The four left are all `Starter D-Zine Canvas`
-      copies from 30 Sep — the cleanup list named only `e75a61c1`, so they were kept; delete them too
-      if they are as disposable as the rest. Doing this found and fixed a real bug: the browser's cache
-      **re-uploaded** everything the server no longer had, so deletions never stuck (overview gotcha
-      43).
-- [x] **Clear the Conflict banner** — nothing carries one any more: the welcome page shows no banner
-      and every design reports `conflict: false`. That decision was already taken.
-- [ ] **Remove the `NecroZine_Next` root from the VS Code workspace.** That lives in the editor's
-      workspace file, not in this repo, and it has already caused one wrong-project edit. **This one is
-      an editor-settings change, so it has to be done by hand** — remove the folder from
-      *File → Add Folder to Workspace* / the `.code-workspace` file.
+Nothing else is open. The feature backlog is empty, and the smaller debts, the accepted trade-offs
+and the deliberate non-goals all have their record in `App_Overview.md`.
 
 ## Ideas, not scheduled
 
@@ -74,13 +40,14 @@ Two handover files in that folder:
   everything that has been built, and §4's gotchas. Read it first.
 - ideas_todo.md — the open work (this file).
 
-State: the feature backlog is empty. Editor tiers 1-7 are done, the multi-tenant build is complete
-through Phase 4 (identity, per-tenant designs, template sharing, hardening, conflict handling), fonts
-work end to end out of our own API, and text marks render. Dev mode still needs no configuration.
+State: the feature backlog is empty, every tier in §5 is done, the multi-tenant build is complete
+through Phase 4, fonts work end to end out of our own API, text marks render, and the design library is
+empty (0 designs) with both templates still shared. Dev mode still needs no configuration.
 
 Next, in order:
-1. Nothing is queued — the feature backlog is empty. Take whichever of the smaller debts and known
-   issues looks most valuable; none of them shows up as a symptom in normal use.
+1. Nothing is queued. Two small items are open: the NecroZine_Next workspace root (an editor setting,
+   so it needs doing by hand) and DrawContent's hard-coded geometry. Neither shows up as a symptom in
+   normal use.
 
 Verify in the real browser, not just tsc, and read the §4 gotchas before writing browser tests — two of
 them (39: requestAnimationFrame never fires in a hidden tab; 33: the 900px responsive breakpoint) will
