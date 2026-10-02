@@ -301,10 +301,13 @@ no longer drops the operation (gotcha 18).
     `ERR_FILE_NOT_FOUND` and the preview is silently skipped. Inserting a graphic from the panel hit
     exactly this, because it built the layer source with `URL.createObjectURL`. Use a `data:` URL
     (exempt from cache busting, and no object URL to leak) or turn `cacheBust` off.
-22. **A font URL is not a font URL.** Google's keyless CSS endpoint answers with **woff2** for a
-    modern user agent and **TrueType** for an old one. The editor parses fonts to draw glyph paths
-    and has no woff2 decompressor, so a full Chrome UA in `scripts/seed-fonts.mjs` produced a
-    catalogue nothing could load. The user agent is part of the contract, not a detail.
+22. **A font URL is not a font URL.** Google's keyless CSS endpoint answers with **woff2** for a modern
+    user agent and **TrueType** for an old one, so the user agent is part of the contract rather than a
+    detail. This one was learned backwards, and the correction is the interesting part: the catalogue
+    was pinned to TrueType with a bare `Mozilla/5.0` because the editor was assumed to parse fonts and
+    draw glyph paths itself — a parser that does not exist, since text renders through CSS. The pin
+    therefore bought nothing and cost about 9 MB of download. Same lesson as gotcha 30, in a different
+    costume: check that the thing you are accommodating is real before you pay for it.
 23. **`useEditor()` with no selector returns a curated subset**, not the whole context — and its type
     is an index signature, so asking for a field that is not in it **compiles fine and is
     `undefined` at runtime**. That crashed the canvas with `ids is not iterable` when the new code
@@ -717,7 +720,22 @@ declares `getFonts` in its config type and never calls it. Every text layer rend
 **Fixed since, by the text-mark work:** the bold/italic gap this left — text layers now render their
 document with marks and all (see *Text marks* below).
 
-**Still open:** the catalogue's file format and the thumbnail failures. Both are in `ideas_todo.md`.
+**Both of the gaps this left are now closed:** the catalogue is woff2 (2.7 MB, below) and the
+thumbnail failures are covered under *Design previews*.
+
+- [x] **The catalogue is woff2, not TrueType** — 2.7 MB instead of 11.6 MB. Which format Google's CSS
+      endpoint returns is chosen by the user agent that asks, and `seed-fonts.mjs` sent a bare
+      `Mozilla/5.0` to get TrueType on the stated grounds that "the editor parses the font to draw
+      glyph paths itself". It does no such thing: text renders through CSS, which is why the shell
+      font has been woff2 all along. The pin bought nothing and cost about 9 MB of download — the
+      whole font catalogue was nearly a third of the repository for a parser that does not exist.
+      Verified end to end: all 76 faces are `.woff2` with no non-local URL left in the catalogue;
+      `GET /fonts/files/*.woff2` answers `font/woff2` with `wOF2` magic, and the old `.ttf` name is
+      a 404; the picker lists all 25 families; `document.fonts` grew 7 → 13 as faces registered and
+      `document.fonts.check('24px Oswald')` is true; switching a layer to Oswald changed its measured
+      width 187.86 → 167.99; and the six faces that page fetched were all `.woff2`, with no `.ttf`
+      request at all. The fetch script now takes the extension from the source URL rather than
+      hard-coding one, so a future change of format names and serves itself correctly.
 
 
 ### Tier 7 — differentiators — ✅ ALL DONE

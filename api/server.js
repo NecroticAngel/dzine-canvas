@@ -1960,7 +1960,12 @@ api.get('/fonts', async (_req, res) => {
  * directory and hoped for: this route takes a path segment from the client, and
  * `../../` in a font name is the obvious thing to try.
  */
-const FONT_FILE_PATTERN = /^[a-z0-9][a-z0-9-]*\.ttf$/;
+const FONT_FILE_TYPES = {
+  '.ttf': 'font/ttf',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+};
+const FONT_FILE_PATTERN = /^[a-z0-9][a-z0-9-]*\.(?:ttf|woff2?)$/;
 const PACKAGED_FONT_DIR = path.join(__dirname, 'data', 'fonts');
 
 api.get('/fonts/files/:name', (req, res) => {
@@ -1979,7 +1984,12 @@ api.get('/fonts/files/:name', (req, res) => {
 
   // Immutable because the name changes if the file changes: a replacement face
   // is saved under a new name by the fetch script, so nothing can go stale.
-  res.setHeader('Content-Type', 'font/ttf');
+  // The type follows the extension, so a woff2 is not labelled as a TrueType and
+  // an operator's drop-in replacement of either kind works unaltered.
+  res.setHeader(
+    'Content-Type',
+    FONT_FILE_TYPES[path.extname(name).toLowerCase()] ?? 'font/ttf',
+  );
   res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
   res.sendFile(file);
 });

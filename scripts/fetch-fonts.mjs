@@ -37,9 +37,25 @@ const slug = (family) =>
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '');
 
-/** `inter-bold_italic.ttf`; an unmarked face is the family's regular. */
-const fileName = (family, style) =>
-  `${slug(family)}-${String(style ?? 'regular').toLowerCase().replace('_', '-')}.ttf`;
+/** `inter-bold-italic.woff2`; an unmarked face is the family's regular. */
+const fileName = (family, style, extension) =>
+  `${slug(family)}-${String(style ?? 'regular').toLowerCase().replace('_', '-')}${extension}`;
+
+/**
+ * The extension the source actually uses.
+ *
+ * Taken from the URL rather than assumed: the catalogue is built from Google's
+ * CSS endpoint, whose answer depends on the user agent that asked for it, so a
+ * hard-coded `.ttf` would name a woff2 file wrongly and serve it with the wrong
+ * type.
+ */
+const extensionOf = (url) => {
+  try {
+    return path.extname(new URL(url).pathname) || '.woff2';
+  } catch {
+    return '.woff2';
+  }
+};
 
 const catalogue = JSON.parse(readFileSync(CATALOGUE, 'utf8'));
 const families = Array.isArray(catalogue.fonts) ? catalogue.fonts : [];
@@ -62,7 +78,7 @@ for (const family of families) {
       continue;
     }
 
-    const name = fileName(family.name, face.style);
+    const name = fileName(family.name, face.style, extensionOf(source));
     const target = path.join(FONT_DIR, name);
 
     if (existsSync(target)) {

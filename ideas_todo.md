@@ -30,9 +30,6 @@ normal use.
 
 ## Known issues
 
-- [ ] **The font catalogue is TrueType, 11.6 MB.** The editor was assumed to parse glyphs; it actually
-      renders text through CSS, and the locally-hosted shell font proves woff2 works. Switching the
-      catalogue would cut roughly 8 MB of binaries.
 - [ ] **Repo history is ~192 MB packed**, about 175 MB of it one 58 MB `output-from-templates.pdf`
       committed three separate times. It is untracked and ignored now, so it will not grow. Removing it
       needs a history rewrite (force-push, invalidates existing clones) — a deliberate non-goal so far.

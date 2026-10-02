@@ -60,11 +60,15 @@ const FAMILIES = [
   'Akatab',
 ];
 
-// An old user agent is what makes the API answer with TrueType files rather
-// than woff2. The editor parses the font to draw glyph paths itself, and that
-// parser has no woff2 decompressor — a full Chrome UA here silently produces a
-// catalogue nothing in the editor can load.
-const UA = 'Mozilla/5.0';
+// A modern user agent is what makes the CSS endpoint answer with **woff2** rather
+// than TrueType — the format is chosen from the UA.
+//
+// This asked for TrueType for a long time, because the editor was assumed to
+// parse fonts and draw glyph paths itself. It does not: it renders text through
+// CSS, which is why the shell font has been woff2 all along and why that
+// assumption cost about 8 MB of download for nothing.
+const UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 
 const cssUrl = (family, spec) =>
   `https://fonts.googleapis.com/css2?family=${family.replace(/ /g, '+')}${spec}&display=swap`;

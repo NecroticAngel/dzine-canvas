@@ -8,24 +8,24 @@
         {
           "style": "Italic",
           "urls": [
-            "/fonts/files/inter-italic.ttf"
+            "/fonts/files/inter-italic.woff2"
           ]
         },
         {
           "style": "Bold_Italic",
           "urls": [
-            "/fonts/files/inter-bold-italic.ttf"
+            "/fonts/files/inter-bold-italic.woff2"
           ]
         },
         {
           "urls": [
-            "/fonts/files/inter-regular.ttf"
+            "/fonts/files/inter-regular.woff2"
           ]
         },
         {
           "style": "Bold",
           "urls": [
-            "/fonts/files/inter-bold.ttf"
+            "/fonts/files/inter-bold.woff2"
           ]
         }
       ]
@@ -36,24 +36,24 @@
         {
           "style": "Italic",
           "urls": [
-            "/fonts/files/roboto-italic.ttf"
+            "/fonts/files/roboto-italic.woff2"
           ]
         },
         {
           "style": "Bold_Italic",
           "urls": [
-            "/fonts/files/roboto-bold-italic.ttf"
+            "/fonts/files/roboto-bold-italic.woff2"
           ]
         },
         {
           "urls": [
-            "/fonts/files/roboto-regular.ttf"
+            "/fonts/files/roboto-regular.woff2"
           ]
         },
         {
           "style": "Bold",
           "urls": [
-            "/fonts/files/roboto-bold.ttf"
+            "/fonts/files/roboto-bold.woff2"
           ]
         }
       ]
@@ -64,24 +64,24 @@
         {
           "style": "Italic",
           "urls": [
-            "/fonts/files/open-sans-italic.ttf"
+            "/fonts/files/open-sans-italic.woff2"
           ]
         },
         {
           "style": "Bold_Italic",
           "urls": [
-            "/fonts/files/open-sans-bold-italic.ttf"
+            "/fonts/files/open-sans-bold-italic.woff2"
           ]
         },
         {
           "urls": [
-            "/fonts/files/open-sans-regular.ttf"
+            "/fonts/files/open-sans-regular.woff2"
           ]
         },
         {
           "style": "Bold",
           "urls": [
-            "/fonts/files/open-sans-bold.ttf"
+            "/fonts/files/open-sans-bold.woff2"
           ]
         }
       ]
@@ -92,24 +92,24 @@
         {
           "style": "Italic",
           "urls": [
-            "/fonts/files/lato-italic.ttf"
+            "/fonts/files/lato-italic.woff2"
           ]
         },
         {
           "style": "Bold_Italic",
           "urls": [
-            "/fonts/files/lato-bold-italic.ttf"
+            "/fonts/files/lato-bold-italic.woff2"
           ]
         },
         {
           "urls": [
-            "/fonts/files/lato-regular.ttf"
+            "/fonts/files/lato-regular.woff2"
           ]
         },
         {
           "style": "Bold",
           "urls": [
-            "/fonts/files/lato-bold.ttf"
+            "/fonts/files/lato-bold.woff2"
           ]
         }
       ]
@@ -120,24 +120,24 @@
         {
           "style": "Italic",
           "urls": [
-            "/fonts/files/montserrat-italic.ttf"
+            "/fonts/files/montserrat-italic.woff2"
           ]
         },
         {
           "style": "Bold_Italic",
           "urls": [
-            "/fonts/files/montserrat-bold-italic.ttf"
+            "/fonts/files/montserrat-bold-italic.woff2"
           ]
         },
         {
           "urls": [
-            "/fonts/files/montserrat-regular.ttf"
+            "/fonts/files/montserrat-regular.woff2"
           ]
         },
         {
           "style": "Bold",
           "urls": [
-            "/fonts/files/montserrat-bold.ttf"
+            "/fonts/files/montserrat-bold.woff2"
           ]
         }
       ]
@@ -148,24 +148,24 @@
         {
           "style": "Italic",
           "urls": [
-            "/fonts/files/poppins-italic.ttf"
+            "/fonts/files/poppins-italic.woff2"
           ]
         },
         {
           "style": "Bold_Italic",
           "urls": [
-            "/fonts/files/poppins-bold-italic.ttf"
+            "/fonts/files/poppins-bold-italic.woff2"
           ]
         },
         {
           "urls": [
-            "/fonts/files/poppins-regular.ttf"
+            "/fonts/files/poppins-regular.woff2"
           ]
         },
         {
           "style": "Bold",
           "urls": [
-            "/fonts/files/poppins-bold.ttf"
+            "/fonts/files/poppins-bold.woff2"
           ]
         }
       ]
@@ -176,24 +176,24 @@
         {
           "style": "Italic",
           "urls": [
-            "/fonts/files/source-sans-3-italic.ttf"
+            "/fonts/files/source-sans-3-italic.woff2"
           ]
         },
         {
           "style": "Bold_Italic",
           "urls": [
-            "/fonts/files/source-sans-3-bold-italic.ttf"
+            "/fonts/files/source-sans-3-bold-italic.woff2"
           ]
         },
         {
           "urls": [
-            "/fonts/files/source-sans-3-regular.ttf"
+            "/fonts/files/source-sans-3-regular.woff2"
           ]
         },
         {
           "style": "Bold",
           "urls": [
-            "/fonts/files/source-sans-3-bold.ttf"
+            "/fonts/files/source-sans-3-bold.woff2"
           ]
         }
       ]
@@ -204,24 +204,24 @@
         {
           "style": "Italic",
           "urls": [
-            "/fonts/files/nunito-italic.ttf"
+            "/fonts/files/nunito-italic.woff2"
           ]
         },
         {
           "style": "Bold_Italic",
           "urls": [
-            "/fonts/files/nunito-bold-italic.ttf"
+            "/fonts/files/nunito-bold-italic.woff2"
           ]
         },
         {
           "urls": [
-            "/fonts/files/nunito-regular.ttf"
+            "/fonts/files/nunito-regular.woff2"
           ]
         },
         {
           "style": "Bold",
           "urls": [
-            "/fonts/files/nunito-bold.ttf"
+            "/fonts/files/nunito-bold.woff2"
           ]
         }
       ]
@@ -232,24 +232,24 @@
         {
           "style": "Italic",
           "urls": [
-            "/fonts/files/raleway-italic.ttf"
+            "/fonts/files/raleway-italic.woff2"
           ]
         },
         {
           "style": "Bold_Italic",
           "urls": [
-            "/fonts/files/raleway-bold-italic.ttf"
+            "/fonts/files/raleway-bold-italic.woff2"
           ]
         },
         {
           "urls": [
-            "/fonts/files/raleway-regular.ttf"
+            "/fonts/files/raleway-regular.woff2"
           ]
         },
         {
           "style": "Bold",
           "urls": [
-            "/fonts/files/raleway-bold.ttf"
+            "/fonts/files/raleway-bold.woff2"
           ]
         }
       ]
@@ -260,24 +260,24 @@
         {
           "style": "Italic",
           "urls": [
-            "/fonts/files/work-sans-italic.ttf"
+            "/fonts/files/work-sans-italic.woff2"
           ]
         },
         {
           "style": "Bold_Italic",
           "urls": [
-            "/fonts/files/work-sans-bold-italic.ttf"
+            "/fonts/files/work-sans-bold-italic.woff2"
           ]
         },
         {
           "urls": [
-            "/fonts/files/work-sans-regular.ttf"
+            "/fonts/files/work-sans-regular.woff2"
           ]
         },
         {
           "style": "Bold",
           "urls": [
-            "/fonts/files/work-sans-bold.ttf"
+            "/fonts/files/work-sans-bold.woff2"
           ]
         }
       ]
@@ -288,24 +288,24 @@
         {
           "style": "Italic",
           "urls": [
-            "/fonts/files/dm-sans-italic.ttf"
+            "/fonts/files/dm-sans-italic.woff2"
           ]
         },
         {
           "style": "Bold_Italic",
           "urls": [
-            "/fonts/files/dm-sans-bold-italic.ttf"
+            "/fonts/files/dm-sans-bold-italic.woff2"
           ]
         },
         {
           "urls": [
-            "/fonts/files/dm-sans-regular.ttf"
+            "/fonts/files/dm-sans-regular.woff2"
           ]
         },
         {
           "style": "Bold",
           "urls": [
-            "/fonts/files/dm-sans-bold.ttf"
+            "/fonts/files/dm-sans-bold.woff2"
           ]
         }
       ]
@@ -315,13 +315,13 @@
       "fonts": [
         {
           "urls": [
-            "/fonts/files/manrope-regular.ttf"
+            "/fonts/files/manrope-regular.woff2"
           ]
         },
         {
           "style": "Bold",
           "urls": [
-            "/fonts/files/manrope-bold.ttf"
+            "/fonts/files/manrope-bold.woff2"
           ]
         }
       ]
@@ -332,24 +332,24 @@
         {
           "style": "Italic",
           "urls": [
-            "/fonts/files/barlow-italic.ttf"
+            "/fonts/files/barlow-italic.woff2"
           ]
         },
         {
           "style": "Bold_Italic",
           "urls": [
-            "/fonts/files/barlow-bold-italic.ttf"
+            "/fonts/files/barlow-bold-italic.woff2"
           ]
         },
         {
           "urls": [
-            "/fonts/files/barlow-regular.ttf"
+            "/fonts/files/barlow-regular.woff2"
           ]
         },
         {
           "style": "Bold",
           "urls": [
-            "/fonts/files/barlow-bold.ttf"
+            "/fonts/files/barlow-bold.woff2"
           ]
         }
       ]
@@ -360,24 +360,24 @@
         {
           "style": "Italic",
           "urls": [
-            "/fonts/files/playfair-display-italic.ttf"
+            "/fonts/files/playfair-display-italic.woff2"
           ]
         },
         {
           "style": "Bold_Italic",
           "urls": [
-            "/fonts/files/playfair-display-bold-italic.ttf"
+            "/fonts/files/playfair-display-bold-italic.woff2"
           ]
         },
         {
           "urls": [
-            "/fonts/files/playfair-display-regular.ttf"
+            "/fonts/files/playfair-display-regular.woff2"
           ]
         },
         {
           "style": "Bold",
           "urls": [
-            "/fonts/files/playfair-display-bold.ttf"
+            "/fonts/files/playfair-display-bold.woff2"
           ]
         }
       ]
@@ -388,24 +388,24 @@
         {
           "style": "Italic",
           "urls": [
-            "/fonts/files/merriweather-italic.ttf"
+            "/fonts/files/merriweather-italic.woff2"
           ]
         },
         {
           "style": "Bold_Italic",
           "urls": [
-            "/fonts/files/merriweather-bold-italic.ttf"
+            "/fonts/files/merriweather-bold-italic.woff2"
           ]
         },
         {
           "urls": [
-            "/fonts/files/merriweather-regular.ttf"
+            "/fonts/files/merriweather-regular.woff2"
           ]
         },
         {
           "style": "Bold",
           "urls": [
-            "/fonts/files/merriweather-bold.ttf"
+            "/fonts/files/merriweather-bold.woff2"
           ]
         }
       ]
@@ -416,24 +416,24 @@
         {
           "style": "Italic",
           "urls": [
-            "/fonts/files/libre-baskerville-italic.ttf"
+            "/fonts/files/libre-baskerville-italic.woff2"
           ]
         },
         {
           "style": "Bold_Italic",
           "urls": [
-            "/fonts/files/libre-baskerville-bold-italic.ttf"
+            "/fonts/files/libre-baskerville-bold-italic.woff2"
           ]
         },
         {
           "urls": [
-            "/fonts/files/libre-baskerville-regular.ttf"
+            "/fonts/files/libre-baskerville-regular.woff2"
           ]
         },
         {
           "style": "Bold",
           "urls": [
-            "/fonts/files/libre-baskerville-bold.ttf"
+            "/fonts/files/libre-baskerville-bold.woff2"
           ]
         }
       ]
@@ -443,13 +443,13 @@
       "fonts": [
         {
           "urls": [
-            "/fonts/files/space-grotesk-regular.ttf"
+            "/fonts/files/space-grotesk-regular.woff2"
           ]
         },
         {
           "style": "Bold",
           "urls": [
-            "/fonts/files/space-grotesk-bold.ttf"
+            "/fonts/files/space-grotesk-bold.woff2"
           ]
         }
       ]
@@ -459,13 +459,13 @@
       "fonts": [
         {
           "urls": [
-            "/fonts/files/oswald-regular.ttf"
+            "/fonts/files/oswald-regular.woff2"
           ]
         },
         {
           "style": "Bold",
           "urls": [
-            "/fonts/files/oswald-bold.ttf"
+            "/fonts/files/oswald-bold.woff2"
           ]
         }
       ]
@@ -475,7 +475,7 @@
       "fonts": [
         {
           "urls": [
-            "/fonts/files/bebas-neue-regular.ttf"
+            "/fonts/files/bebas-neue-regular.woff2"
           ]
         }
       ]
@@ -485,7 +485,7 @@
       "fonts": [
         {
           "urls": [
-            "/fonts/files/lobster-regular.ttf"
+            "/fonts/files/lobster-regular.woff2"
           ]
         }
       ]
@@ -495,7 +495,7 @@
       "fonts": [
         {
           "urls": [
-            "/fonts/files/pacifico-regular.ttf"
+            "/fonts/files/pacifico-regular.woff2"
           ]
         }
       ]
@@ -505,13 +505,13 @@
       "fonts": [
         {
           "urls": [
-            "/fonts/files/caveat-regular.ttf"
+            "/fonts/files/caveat-regular.woff2"
           ]
         },
         {
           "style": "Bold",
           "urls": [
-            "/fonts/files/caveat-bold.ttf"
+            "/fonts/files/caveat-bold.woff2"
           ]
         }
       ]
@@ -521,13 +521,13 @@
       "fonts": [
         {
           "urls": [
-            "/fonts/files/agdasima-regular.ttf"
+            "/fonts/files/agdasima-regular.woff2"
           ]
         },
         {
           "style": "Bold",
           "urls": [
-            "/fonts/files/agdasima-bold.ttf"
+            "/fonts/files/agdasima-bold.woff2"
           ]
         }
       ]
@@ -537,7 +537,7 @@
       "fonts": [
         {
           "urls": [
-            "/fonts/files/acme-regular.ttf"
+            "/fonts/files/acme-regular.woff2"
           ]
         }
       ]
@@ -547,13 +547,13 @@
       "fonts": [
         {
           "urls": [
-            "/fonts/files/akatab-regular.ttf"
+            "/fonts/files/akatab-regular.woff2"
           ]
         },
         {
           "style": "Bold",
           "urls": [
-            "/fonts/files/akatab-bold.ttf"
+            "/fonts/files/akatab-bold.woff2"
           ]
         }
       ]
