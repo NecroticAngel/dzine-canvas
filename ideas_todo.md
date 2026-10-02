@@ -25,8 +25,6 @@ normal use.
       crossing a small layer makes that part of the layer harder to click. Narrow the target, or let
       pointer events through unless the pointer is within a pixel or two of the line.
 - [ ] **`Ctrl+0` resets to 100%**, not the app's 0.43 fit default. Change it if that feels wrong.
-- [ ] **A multi-page PDF places every page at the active page's size.** Exact for designs whose pages
-      share one size — the normal case — but wrong the moment they do not.
 
 ## Known issues
 

@@ -25,6 +25,7 @@ import {
   exportDesign,
   type ExportFormat,
   type ExportScale,
+  withVisibleFrames,
 } from '../../../../utils/exportDesign';
 import { ThemeToggle, useAppTheme } from '../../../../shared/theme';
 import { ResizeDialog } from '../canvas-size';
@@ -182,6 +183,23 @@ const EditorHeaderForwardRef: ForwardRefRenderFunction<
     setNameDialog(next);
   };
 
+  /**
+   * The canvas renders one page at a time, so an all-pages export has to take
+   * the pages in turns. `goToPage` also clears the selection, which keeps
+   * outlines and handles out of the capture of the page that follows.
+   */
+  const showPageForExport = async (index: number) => {
+    if (query.activePage() === index) return;
+    actions.goToPage(index);
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 16));
+      if (document.getElementById(`lidojs-page-${index}`)) return;
+    }
+    throw new Error(
+      `Page ${index + 1} did not appear in time, so the export was stopped.`,
+    );
+  };
+
   const handleExport = async (format: ExportFormat) => {
     if (exporting) return;
     // Read the selection before clearing it: the crop needs to know where it was,
@@ -196,25 +214,31 @@ const EditorHeaderForwardRef: ForwardRefRenderFunction<
     setExporting(true);
     setExportOpen(false);
     try {
-      actions.selectLayers([]);
-      actions.setEditingLayer(null);
-      await new Promise<void>((resolve) =>
-        window.requestAnimationFrame(() => resolve()),
-      );
-      const pageIndex = query.activePage();
-      const pageSize = query.getPageSize(pageIndex);
-      const base = safeFileName(currentDesign?.name ?? 'dzine-canvas');
-      await exportDesign({
-        format,
-        pageIndex,
-        pageSize,
-        pages: query.serialize(),
-        fileName: base,
-        scale: exportScale,
-        // JPEG has no alpha channel, so the toggle would be a lie there.
-        transparent: exportTransparent && format !== 'jpg',
-        allPages: exportAllPages,
-        crop,
+      // Frames drive both the wait below and html-to-image's own bookkeeping, and
+      // a background tab never runs one — the export would hang instead of
+      // failing, with the button stuck on "Exporting…" forever.
+      await withVisibleFrames(async () => {
+        actions.selectLayers([]);
+        actions.setEditingLayer(null);
+        await new Promise<void>((resolve) =>
+          window.requestAnimationFrame(() => resolve()),
+        );
+        const pageIndex = query.activePage();
+        const pageSize = query.getPageSize(pageIndex);
+        const base = safeFileName(currentDesign?.name ?? 'dzine-canvas');
+        await exportDesign({
+          format,
+          pageIndex,
+          pageSize,
+          pages: query.serialize(),
+          fileName: base,
+          scale: exportScale,
+          // JPEG has no alpha channel, so the toggle would be a lie there.
+          transparent: exportTransparent && format !== 'jpg',
+          allPages: exportAllPages,
+          crop,
+          bringPageIntoView: showPageForExport,
+        });
       });
     } catch (error) {
       console.error(error);

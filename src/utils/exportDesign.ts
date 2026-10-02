@@ -19,6 +19,24 @@ export type ExportCrop = {
 };
 
 /**
+ * A page's own size, read from its root layer — the same rule the editor uses.
+ *
+ * The `pageSize` option is the *active* page's size, which is all a single-page
+ * export needs. A multi-page export has to ask each page instead: a design can
+ * hold pages of different sizes, and using the active page's size for all of them
+ * quietly scales the odd ones out.
+ */
+const pageOwnSize = (pages: unknown, index: number): PageSize | null => {
+  const list = Array.isArray(pages) ? pages : [];
+  const box = (
+    list[index] as
+      | { layers?: Record<string, { props?: { boxSize?: PageSize } }> }
+      | undefined
+  )?.layers?.ROOT?.props?.boxSize;
+  return box?.width && box?.height ? { width: box.width, height: box.height } : null;
+};
+
+/**
  * The part of the page a crop actually covers.
  *
  * The artboard clips to the page, and so does a capture of it, so a layer hanging
@@ -51,17 +69,54 @@ const getPageContent = (pageIndex: number) => {
   return { root, content };
 };
 
-/** Which page elements are currently on screen, in order. */
-const mountedPageIndexes = () => {
-  const indexes: number[] = [];
-  for (
-    let index = 0;
-    document.getElementById(`lidojs-page-${index}`);
-    index += 1
-  ) {
-    indexes.push(index);
+/** How many pages the design has. The DOM only ever holds the visible one. */
+const pageCount = (pages: unknown) => (Array.isArray(pages) ? pages.length : 0);
+
+/**
+ * html-to-image resolves every capture from inside a `requestAnimationFrame`
+ * callback, and a hidden tab never runs frames — so an export, or the thumbnail
+ * captured on autosave, started while the tab is in the background would wait
+ * forever and the save would never finish. Frames are driven by a timer for the
+ * duration instead; the handles still cancel, so nothing else can tell.
+ */
+let framePatches = 0;
+let restoreFrames: (() => void) | null = null;
+
+export const withVisibleFrames = async <T>(
+  run: () => Promise<T>,
+): Promise<T> => {
+  if (framePatches === 0) {
+    const nativeRequest = window.requestAnimationFrame.bind(window);
+    const nativeCancel = window.cancelAnimationFrame.bind(window);
+    const timers = new Set<number>();
+    window.requestAnimationFrame = (callback: FrameRequestCallback) => {
+      const id = window.setTimeout(() => {
+        timers.delete(id);
+        callback(performance.now());
+      }, 16);
+      timers.add(id);
+      return id;
+    };
+    window.cancelAnimationFrame = (handle: number) => {
+      if (!timers.delete(handle)) nativeCancel(handle);
+    };
+    restoreFrames = () => {
+      window.requestAnimationFrame = nativeRequest;
+      window.cancelAnimationFrame = nativeCancel;
+      for (const id of timers) window.clearTimeout(id);
+      timers.clear();
+    };
   }
-  return indexes;
+  framePatches += 1;
+  try {
+    return await run();
+  } finally {
+    framePatches -= 1;
+    if (framePatches === 0 && restoreFrames) {
+      restoreFrames();
+      restoreFrames = null;
+    }
+  }
 };
 
 const withCleanCapture = async <T>(
@@ -86,7 +141,7 @@ const withCleanCapture = async <T>(
   `;
   document.head.appendChild(style);
   try {
-    return await run();
+    return await withVisibleFrames(run);
   } finally {
     if (previous == null) root.removeAttribute('data-exporting');
     else root.setAttribute('data-exporting', previous);
@@ -202,6 +257,12 @@ export const exportDesign = async (options: {
   allPages?: boolean;
   /** Export only this region of the page, in page units — a selection. */
   crop?: ExportCrop | null;
+  /**
+   * Show page `index` on the canvas and resolve once it is rendered. Needed by
+   * "all pages": the editor keeps one page element, so the others have to take
+   * their turn in it before they can be captured.
+   */
+  bringPageIntoView?: (index: number) => Promise<void>;
 }) => {
   const base = options.fileName ?? 'dzine-canvas';
   const scale = options.scale ?? 2;
@@ -209,8 +270,6 @@ export const exportDesign = async (options: {
   const crop = options.crop
     ? clampToPage(options.crop, options.pageSize)
     : null;
-  // A selection crop is the size of the output as well as its position.
-  const outputSize = crop ?? options.pageSize;
 
   if (options.format === 'json') {
     downloadObjectAsJson(base, options.pages);
@@ -219,40 +278,46 @@ export const exportDesign = async (options: {
 
   // A selection belongs to one page, so it overrides "all pages" rather than
   // quietly handing back the same crop from every page.
-  const requested =
-    options.allPages && !crop ? mountedPageIndexes() : [options.pageIndex];
-  const pageIndexes = requested.length ? requested : [options.pageIndex];
+  const total = pageCount(options.pages);
+  const everyPage = Boolean(options.allPages) && !crop && total > 1;
+  const pageIndexes = everyPage
+    ? Array.from({ length: total }, (_, index) => index)
+    : [options.pageIndex];
+  // Each page keeps its own size. The active page's size is the right answer only
+  // for the active page — and "all pages" is exactly the case where a design's
+  // pages can differ, where using it would scale the odd ones out.
+  const sizes = pageIndexes.map(
+    (index) => crop ?? pageOwnSize(options.pages, index) ?? options.pageSize,
+  );
 
   if (options.format === 'pdf') {
-    // Every page is placed at the output size. A design whose pages are all the
-    // same size — the normal case — is exact; a mixed one is scaled to fit rather
-    // than cropped.
-    const orientation = outputSize.width >= outputSize.height ? 'l' : 'p';
+    const first = sizes[0] ?? options.pageSize;
+    const pageOrientation = (size: PageSize) =>
+      size.width >= size.height ? 'l' : 'p';
     const pdf = new jsPDF({
-      orientation,
+      orientation: pageOrientation(first),
       unit: 'px',
-      format: [outputSize.width, outputSize.height],
+      format: [first.width, first.height],
       hotfixes: ['px_scaling'],
     });
 
-    for (const [position, pageIndex] of pageIndexes.entries()) {
-      const dataUrl = await capturePageImage(
-        pageIndex,
-        options.pageSize,
-        'png',
-        { scale, transparent, crop },
-      );
-      if (position > 0) {
-        pdf.addPage([outputSize.width, outputSize.height], orientation);
+    try {
+      for (const [position, pageIndex] of pageIndexes.entries()) {
+        await options.bringPageIntoView?.(pageIndex);
+        const size = sizes[position] ?? options.pageSize;
+        const dataUrl = await capturePageImage(pageIndex, size, 'png', {
+          scale,
+          transparent,
+          crop,
+        });
+        if (position > 0) {
+          pdf.addPage([size.width, size.height], pageOrientation(size));
+        }
+        pdf.addImage(dataUrl, 'PNG', 0, 0, size.width, size.height);
       }
-      pdf.addImage(
-        dataUrl,
-        'PNG',
-        0,
-        0,
-        outputSize.width,
-        outputSize.height,
-      );
+    } finally {
+      // Put the editor back on the page the user was looking at.
+      if (everyPage) await options.bringPageIntoView?.(options.pageIndex);
     }
 
     downloadBlob(`${base}.pdf`, pdf.output('blob'));
@@ -260,15 +325,20 @@ export const exportDesign = async (options: {
   }
 
   // One file per page when every page is asked for; otherwise just the one.
-  for (const [position, pageIndex] of pageIndexes.entries()) {
-    const dataUrl = await capturePageImage(
-      pageIndex,
-      options.pageSize,
-      options.format,
-      { scale, transparent, crop },
-    );
-    const suffix =
-      pageIndexes.length > 1 ? `-${position + 1}` : '';
-    downloadDataUrl(`${base}${suffix}.${options.format}`, dataUrl);
+  try {
+    for (const [position, pageIndex] of pageIndexes.entries()) {
+      await options.bringPageIntoView?.(pageIndex);
+      const dataUrl = await capturePageImage(
+        pageIndex,
+        sizes[position] ?? options.pageSize,
+        options.format,
+        { scale, transparent, crop },
+      );
+      const suffix =
+        pageIndexes.length > 1 ? `-${position + 1}` : '';
+      downloadDataUrl(`${base}${suffix}.${options.format}`, dataUrl);
+    }
+  } finally {
+    if (everyPage) await options.bringPageIntoView?.(options.pageIndex);
   }
 };

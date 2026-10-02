@@ -399,7 +399,13 @@ no longer drops the operation (gotcha 18).
     not change that in this harness). I had spent a while suspecting a regression in my own edits
     before measuring the thing I had assumed was working. The fix is one synchronous measurement on
     selection change, with rAF used only to *follow* a moving layer: a frame is an optimisation, and
-    anything the user can see must not depend on one arriving.
+    anything the user can see must not depend on one arriving. The same trap is inside
+    `html-to-image`: `createImage` resolves **every** capture from inside a rAF callback
+    (`img.decode().then(() => requestAnimationFrame(() => resolve(img)))`), so an export or an
+    autosave thumbnail started while the tab was in the background waited *forever* — no error, no
+    file, and the header stuck on "Exporting…". `withVisibleFrames` runs a capture with frames driven
+    by a timer instead, which is the only way to make that library finish in a tab that is not
+    drawing.
 40. **`html-to-image` multiplies `canvasWidth` by `pixelRatio`.** `toCanvas` computes
     `canvas.width = (options.canvasWidth || width) * ratio`, so passing a canvas size *and* a pixel
     ratio scales the output **twice**: 2× exported at 4×, 3× at 9×. It had been that way since the
@@ -614,14 +620,22 @@ there should have been two.
 - [x] **1× / 2× / 3× scale**, chosen in the export menu. 2× was previously hard-coded.
 - [x] **Transparent background** for PNG and SVG (omitted for JPG, which has no alpha channel, and
       the menu passes `transparent: false` there rather than pretending).
-- [x] **Multi-page output**: "All pages" writes one file per page (`name-1.svg`, `name-2.svg`) and
-      builds a genuine multi-page PDF instead of only ever exporting the active page.
-- [x] Verified against the real module in a browser: `t.svg`, `t-1.svg` + `t-2.svg`, and a `t.pdf`
-      blob for two pages; 1× vs 3× PNG differ by the expected amount; and decoding both PNGs shows
-      the corner pixel is `rgba(255,255,255,255)` opaque against `rgba(0,0,0,0)` transparent at the
-      same 800×400 (200×100 at 2×).
-- Note: a multi-page PDF places every page at the output size. Designs whose pages share one
-      size — the normal case — are exact.
+- [x] **Multi-page output**: "All pages" writes one file per page (`name-1.png`, `name-2.png`) and
+      builds a genuine multi-page PDF. The canvas renders **one page at a time** — the page it is
+      showing — so this cannot be a DOM walk: `exportDesign` takes each page in turn through a
+      `bringPageIntoView` callback (the header's `goToPage`, then a wait for the element to appear)
+      and puts the editor back on the page the user was looking at afterwards.
+- [x] Every page is sized from **its own root layer**, for images as well as the PDF, so a design
+      whose pages differ exports exactly instead of being scaled to whichever page was active. (A
+      selection crop is its own output size, so that path is unchanged.)
+- [x] Verified in the browser against a two-page design the UI cannot make — 800×400 and 400×800,
+      seeded through the API: a **two-page PDF whose MediaBoxes are `600×300` and `300×600` pt**,
+      each page's own size, where the old code gave `600×300` twice; two PNGs at 1600×800 and
+      800×1600 at 2×; the editor left on page 1 of 2; and a single-page PDF unchanged at `600×300`.
+      The earlier note here claiming `t-1.svg` + `t-2.svg` was wrong: the walk could never see a
+      second page, and "All pages" was quietly producing a one-page file.
+- [x] 1× vs 3× PNG differ by the expected amount; a transparent PNG decodes to `rgba(0,0,0,0)` at
+      the corner where an opaque export is `rgba(255,255,255,255)`.
 - [x] **Selection only.** A checkbox in the export menu crops the capture to the selected layers:
       `query.selectionBounds()` returns the union of their boxes in page units and
       `exportDesign({ crop })` captures the page content with `translate(-x, -y)` and a canvas the
