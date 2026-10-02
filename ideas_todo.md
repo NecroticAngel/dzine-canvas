@@ -84,5 +84,7 @@ Next, in order:
 
 Verify in the real browser, not just tsc, and read the §4 gotchas before writing browser tests — two of
 them (39: requestAnimationFrame never fires in a hidden tab; 33: the 900px responsive breakpoint) will
-otherwise cost you an hour.
+otherwise cost you an hour. Two more: 44 (reload the page after an edit, or HMR leaves two copies of the
+vendored editor and every `useEditor` throws) and 42 (in a hidden tab `pointerdown`/`pointerup` never
+arrive, so drive drags by dispatching the events yourself).
 ```

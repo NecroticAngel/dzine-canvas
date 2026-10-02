@@ -440,6 +440,13 @@ no longer drops the operation (gotcha 18).
     server — the flag that tells them apart was already on the record (`remote`), so the fix is one
     guard: a `remote` design missing from the server's list is dropped, not re-uploaded. Worth
     remembering because it is invisible until the count stops going down.
+44. **Editing a file while the dev server is running can leave two copies of the vendored editor in the
+    page.** After a run of edits, `Sidebar` and `PagesPanel` threw `useEditor must be used inside
+    <Editor>` and the stacks showed *two different* module URLs for the same `design-editor/index.tsx`
+    (`?t=1790935825362` and `?t=1790936207195`) — two module instances mean two React contexts, and the
+    consumers were resolving the wrong one. Nothing was wrong with the code: a fresh page load mounts
+    the editor with zero errors. Reload the page before believing an error like this, and before
+    trusting a browser test that runs after an edit.
 
 **State of the library (context, not a TODO).** The test designs are gone: 24 → 4, the twenty deleted
 through the API (`Square` ×7, `Blank White` ×8, `Portrait`, `tet`, `Facebook Profile Photo`,
