@@ -22,9 +22,13 @@ normal use.
 - [ ] **Two junk 0×0 draw layers** are saved into a design and still there. Invisible and zero-sized;
       a load-time sweep is not worth the risk of removing something meaningful unless it matters.
 - [ ] **A layout guide's grab area is 7px wide and sits in front of what is under it.** A guide
-      crossing a small layer makes that part of the layer harder to click. Narrow the target, or let
-      pointer events through unless the pointer is within a pixel or two of the line.
-- [ ] **`Ctrl+0` resets to 100%**, not the app's 0.43 fit default. Change it if that feels wrong.
+      crossing a small layer makes that part of the layer harder to click. **Accepted for now:**
+      narrowing it buys very little, and the alternative — putting the line behind the content — means
+      a guide that crosses a busy area can no longer be picked up to move or delete it. Recorded in
+      §4 of the overview rather than left as work.
+- [x] **`Ctrl+0` resets to 100%**, not the app's 0.43 fit default. **Keeping it:** that is the binding
+      everywhere else (`Ctrl+=` / `Ctrl+-` step, `Ctrl+0` is 100%), and a design still *opens* at the
+      fit zoom, so nothing is lost.
 
 ## Known issues
 
@@ -34,16 +38,20 @@ normal use.
 
 ## Housekeeping
 
-- [ ] **Clear out the test designs** accumulated while verifying: `Square` (created reproducing the
-      table bug), `Portraitdfsfe`, the several "Blank White" copies, `Facebook Profile Photo` (made to
-      test the selection export, and where the 30° rotate experiment was run), the two `Square`
-      designs made for the snap-to-grid work, and `e75a61c1` (1080×1920), which was resized with the
-      *first* magic-resize algorithm and so looks nothing like what the current one produces.
-- [ ] **Clear the Conflict banner** on `Starter D-Zine Canvas` — the QR work inserted layers while the
-      server had a newer version, so *Keep my version* / *Use their version* is waiting on the welcome
-      page.
+- [x] **Test designs cleared** — 24 → 4, the twenty deleted through the API: `Square` ×7, `Blank White`
+      ×8, `Portrait`, `tet`, `Facebook Profile Photo`, `e75a61c1` (1080×1920) and the mixed-size PDF
+      test design. A JSON + thumbnail backup is in `%TEMP%\dzine-designs-backup-20261002-120818`
+      (~115 KB) if one turns out to have been wanted. The four left are all `Starter D-Zine Canvas`
+      copies from 30 Sep — the cleanup list named only `e75a61c1`, so they were kept; delete them too
+      if they are as disposable as the rest. Doing this found and fixed a real bug: the browser's cache
+      **re-uploaded** everything the server no longer had, so deletions never stuck (overview gotcha
+      43).
+- [x] **Clear the Conflict banner** — nothing carries one any more: the welcome page shows no banner
+      and every design reports `conflict: false`. That decision was already taken.
 - [ ] **Remove the `NecroZine_Next` root from the VS Code workspace.** That lives in the editor's
-      workspace file, not in this repo, and it has already caused one wrong-project edit.
+      workspace file, not in this repo, and it has already caused one wrong-project edit. **This one is
+      an editor-settings change, so it has to be done by hand** — remove the folder from
+      *File → Add Folder to Workspace* / the `.code-workspace` file.
 
 ## Ideas, not scheduled
 

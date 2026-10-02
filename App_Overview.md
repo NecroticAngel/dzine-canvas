@@ -432,15 +432,22 @@ no longer drops the operation (gotcha 18).
     React picks the down up by delegation from `#root`). Read the DOM in a **later** `page.evaluate`
     call — React has not re-rendered within the same task, so measuring immediately reports the old
     geometry and a working drag looks exactly like a broken one.
+43. **An offline-first cache that re-uploads whatever the server lacks will resurrect deletions.**
+    Deleting a design through the API (or from another browser) looked like it worked and then came
+    straight back: `hydrateLibrary` rebuilt the list from the server and then, for every local design
+    the server did not list, pushed it into the store *and* queued an upsert. That rule is right for a
+    design this browser made and has not managed to upload yet, and wrong for one it got **from** the
+    server — the flag that tells them apart was already on the record (`remote`), so the fix is one
+    guard: a `remote` design missing from the server's list is dropped, not re-uploaded. Worth
+    remembering because it is invisible until the count stops going down.
 
-**State of the library (context, not a TODO).** Test designs have accumulated: `Portraitdfsfe` (used
-for testing), `Square` (created while reproducing the table bug), several "Blank White" copies made
-while verifying, and one 1080×1920 design resized with the *first* magic-resize algorithm. A design
-may also be left showing the **Conflict** banner — the QR work inserted layers while the server had a
-newer version, so "Keep my version" / "Use their version" is waiting on the welcome page for
-`Starter D-Zine Canvas`. `Portrait` and `Starter D-Zine Canvas` were both touched during font
-verification (a text layer switched to Caveat, a heading preset added). `ideas_todo.md` has the
-cleanup.
+**State of the library (context, not a TODO).** The test designs are gone: 24 → 4, the twenty deleted
+through the API (`Square` ×7, `Blank White` ×8, `Portrait`, `tet`, `Facebook Profile Photo`,
+`e75a61c1` and the mixed-size PDF test design), with a JSON + thumbnail backup in
+`%TEMP%\dzine-designs-backup-20261002-120818`. The four that remain are all `Starter D-Zine Canvas`
+copies from 30 Sep — kept because the cleanup list named only `e75a61c1` — and `Portrait` and
+`Starter D-Zine Canvas` were both touched during font verification. No design carries a **Conflict**
+banner any more; that decision was taken. See `ideas_todo.md` for what is left.
 
 ---
 

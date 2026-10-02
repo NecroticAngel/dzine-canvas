@@ -706,6 +706,11 @@ export const hydrateLibrary = (): Promise<void> => {
       if (designs.some((item) => item.id === design.id)) continue;
       if (design.placeholder) continue;
       if (queuedDeletes.has(design.id)) continue;
+      // A design this browser got from the server, and that the server no longer
+      // lists, was deleted somewhere else. Keeping it would leave the grid showing
+      // a card that cannot be opened, and re-uploading it would resurrect it.
+      // One that was never uploaded is different: it is kept and pushed up.
+      if (design.remote) continue;
       designs.push(design);
       // A design the server doesn't have yet, unless it is conflicted — in which
       // case the server has a version we are waiting on a decision about.
