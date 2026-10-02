@@ -2,6 +2,10 @@ client: demo
 host: canvas.d-zine.org.za
 basePath: /demo
 
+# Proxy hops in front of the pod (the ingress). Lets the API honour
+# X-Forwarded-Proto so generated URLs use the public https scheme.
+trustProxy: "1"
+
 image:
   repository: ghcr.io/necroticangel/dzine-canvas
   tag: 0.1.0

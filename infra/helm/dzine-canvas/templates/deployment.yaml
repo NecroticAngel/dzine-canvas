@@ -35,6 +35,8 @@ spec:
               value: {{ .Values.basePath | quote }}
             - name: STORAGE_ROOT
               value: /data
+            - name: TRUST_PROXY
+              value: {{ .Values.trustProxy | quote }}
           ports:
             - name: http
               containerPort: 4201

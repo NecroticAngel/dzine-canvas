@@ -102,7 +102,28 @@ if (storageConfigError) {
   process.exit(1);
 }
 
+/**
+ * Trust the reverse proxy in front of the API, or every absolute URL it
+ * generates is wrong.
+ *
+ * The ingress terminates TLS and forwards plain HTTP, so without this
+ * `req.protocol` is `http` and uploads, thumbnails and share links are built as
+ * `http://…` on a site served over HTTPS. Express honours `X-Forwarded-Proto`
+ * only for a proxy it has been told to trust.
+ *
+ * Off by default: trusting a header a caller can set is safe only while the API
+ * is reachable exclusively through that proxy. `TRUST_PROXY` takes the number
+ * of proxy hops (`1` for a single ingress) or an Express subnet list.
+ */
+const parseTrustProxy = (value) => {
+  const trimmed = String(value ?? '').trim();
+  if (!trimmed || trimmed === 'false') return false;
+  if (trimmed === 'true') return true;
+  return /^\d+$/.test(trimmed) ? Number(trimmed) : trimmed;
+};
+
 const app = express();
+app.set('trust proxy', parseTrustProxy(process.env.TRUST_PROXY));
 const api = express.Router();
 
 /**

@@ -2,4 +2,25 @@
 .github
 dist
 node_modules
-output-from-templates.pdf
+
+# Local environment files must never enter a build context. The build stage's
+# `COPY . .` would otherwise bake them into the image.
+.env
+.env.*
+!.env.example
+
+# Runtime state: the metadata DB and per-tenant designs/uploads are data, not
+# source. A local dev run creates these, and the final stage copies `api/`.
+api/data/db.sqlite*
+api/data/users/
+
+# Generated exports and local storage backups (scripts/backup-storage.mjs).
+output-*.pdf
+backups/
+
+# Local tool state and handover docs; not needed to build or run the image.
+.serena/
+.vscode/
+.idea/
+docs/
+*.md
