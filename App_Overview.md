@@ -106,6 +106,7 @@ Working & verified:
 - Table cells editable: `TableCellView` + `CellToolbar` (bold, italic, size, colour, align, cell bg)
 - Draw panel + `DrawToolbar` (stroke colour / width)
 - Sidebar "Business" badges removed
+- Sidebar rail tabs toggle: clicking the open tab's icon closes its panel, as does its ✕
 - Draw panel floats **top-left** (`left: 72, top: 44`)
 
 The per-feature record, with the exact verifications, is §5. `.serena/` is untracked but self-ignoring
@@ -245,7 +246,9 @@ no longer drops the operation (gotcha 18).
    binaries by full path.
 4. **Emotion class hashes change** whenever styles change (`css-3wb6ht-DrawContent` → new hash).
    Never hard-code `css-xxxxx` selectors in tests or `grep`-based verification.
-5. **The sidebar tab is a toggle** — clicking it twice closes the panel.
+5. **The sidebar rail is a toggle** — clicking the open tab's icon closes its panel, and so does the
+   ✕. A test that clicks a tab twice must expect it *closed* on the second click. (This note claimed
+   as much for a while before the code did it.)
 6. **Draw-panel items are SVG `role="img"`, not `<img>`.** Use
    `page.getByRole('img', { name: 'Pencil' })`.
 7. **The `Draw`/`Table`/`QrCode` rail icons have no accessible name** — target the label text
@@ -628,6 +631,11 @@ there should have been two.
 - `GET /frames`, `/graphics` and `/images` keep the shapes the panels already expected, so the
   front-end change was small. `/assets` and `/assets/:id/content` serve the library directly.
 - Admins publish with `POST /admin/assets` and remove with `DELETE /admin/assets/:id`; both audited.
+- **The rail tabs toggle their panel.** Clicking the tab whose panel is already open closes it —
+  `Sidebar`'s `onChange` compares against the current tab instead of always opening — so the ✕ in the
+  panel corner is a convenience rather than the only way out. Verified on every panel type, Draw
+  included: with Draw open, clicking the Draw icon unmounted the floating stroke toolbar and cleared
+  the rail's active highlight, and clicking again brought both back.
 - **Removed a relay that would have been an open proxy.** The Graphic panel fetched each SVG through
   `/graphics/download?url=`, which would have had to fetch a caller-supplied URL. It now fetches the
   asset's own content endpoint.

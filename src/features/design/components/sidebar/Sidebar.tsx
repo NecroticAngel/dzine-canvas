@@ -102,9 +102,12 @@ export const Sidebar = () => {
         <SidebarTab
           active={tab}
           tabs={tabs}
-          onChange={(_, tab) => {
+          onChange={(_, nextTab) => {
             actions.setSidebar();
-            setTab(tab);
+            // Clicking the tab you are already on closes the panel, so the rail
+            // toggles: the ✕ in the corner is a convenience, not the only way
+            // out. `setTab(null)` is what closing means everywhere else here.
+            setTab((current) => (current === nextTab ? null : nextTab));
           }}
         />
         {tab && (
