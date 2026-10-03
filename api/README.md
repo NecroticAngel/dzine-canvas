@@ -196,3 +196,28 @@ Writes blank + starter templates under the default templates dir.
 - Uploads in the editor sidebar now hit `POST /uploads` and survive refresh (per user).
 - Designs are saved through `/api/designs`, with metadata in SQLite and page JSON on persistent storage.
 - If sidebars are empty, confirm the API is running, env paths exist, and `API_ENDPOINT` matches, then hard-refresh.
+
+## Hosting instance access
+
+For a fresh dedicated Hosting instance, set `AUTH_MODE=oidc`, `OIDC_ISSUER`,
+`OIDC_JWKS_URL`, `OIDC_AUDIENCE`, `AUTH_INSTANCE_ID` (the stable Hosting workload UUID)
+and `AUTH_INSTANCE_GROUP` (that instance's exact full group path).
+
+Every request must carry the gateway's access token plus `X-Hosting-User-Id` and
+`X-Hosting-User-Issuer` matching its verified claims. Canvas checks the instance
+audience group on every request, including existing members. The gateway must
+strip browser-supplied identity headers and the network must deny gateway bypass.
+
+Allowed users join one shared workspace as ordinary members on their first request;
+no separate Canvas invitation or role selection is needed. `AUTH_ADMIN_EMAILS` does
+not promote users in this mode. Username and display name come from verified token
+claims and are returned by `/api/me`. Missing optional profile fields remain empty.
+Names and email changes never change ownership. Other authentication modes retain
+their existing invitation flow.
+
+Use this mode only on a fresh instance until an existing-workspace migration has
+been reviewed. Changing the instance ID is not a workspace migration. Revocation
+of already-issued tokens still depends on the gateway's bounded session checks.
+
+Run the focused proof with `node --test api/identity.test.js` and the normal
+repository checks with `just check`.

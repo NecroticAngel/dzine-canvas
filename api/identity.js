@@ -44,6 +44,8 @@ const JWKS_URL = fromEnv(
   ISSUER ? `${ISSUER.replace(/\/+$/, '')}/.well-known/jwks.json` : '',
 );
 const AUDIENCE = fromEnv('OIDC_AUDIENCE');
+const INSTANCE_ID = fromEnv('AUTH_INSTANCE_ID');
+const INSTANCE_GROUP = fromEnv('AUTH_INSTANCE_GROUP');
 const HMAC_SECRET = fromEnv('OIDC_HMAC_SECRET');
 const TOKEN_HEADER = fromEnv('AUTH_TOKEN_HEADER', 'authorization').toLowerCase();
 const USER_HEADER = fromEnv('AUTH_USER_HEADER', 'x-auth-request-user').toLowerCase();
@@ -71,6 +73,14 @@ const MODE = (() => {
 
 /** Non-empty when the server must refuse to start. */
 export const authConfigError = (() => {
+  if (INSTANCE_ID || INSTANCE_GROUP) {
+    if (!INSTANCE_ID || !INSTANCE_GROUP || MODE !== 'oidc' || !ISSUER || !AUDIENCE) {
+      return 'Instance access requires AUTH_INSTANCE_ID, AUTH_INSTANCE_GROUP, AUTH_MODE=oidc, OIDC_ISSUER and OIDC_AUDIENCE.';
+    }
+    if (!/^[a-zA-Z0-9_-]+$/.test(INSTANCE_ID)) {
+      return 'AUTH_INSTANCE_ID must be a stable identifier containing only letters, digits, hyphens or underscores.';
+    }
+  }
   if (!MODE) {
     return 'No authentication configured. Set OIDC_ISSUER (plus AUTH_MODE=oidc), or AUTH_MODE=headers behind a trusted proxy.';
   }
@@ -228,12 +238,26 @@ const readCredentials = async (req) => {
   const claims = await verifyToken(token);
   const externalId = trim(claims.sub);
   if (!externalId) throw new Error('Token has no sub claim');
+  if (INSTANCE_ID) {
+    if (authConfigError) throw new Error(authConfigError);
+    if (typeof claims.exp !== 'number' || !Number.isFinite(claims.exp)) {
+      throw new Error('Instance access requires a token expiry');
+    }
+    if (!Array.isArray(claims.groups) || !claims.groups.includes(INSTANCE_GROUP)) {
+      throw new Error('Token does not grant access to this instance');
+    }
+    if (req.header('x-hosting-user-id') !== claims.sub ||
+        req.header('x-hosting-user-issuer') !== claims.iss) {
+      throw new Error('Forwarded identity does not match the verified token');
+    }
+  }
   const fullName =
     trim(claims.name) ||
     [trim(claims.given_name), trim(claims.family_name)].filter(Boolean).join(' ') ||
     null;
   return {
-    externalId,
+    externalId: INSTANCE_ID ? JSON.stringify([claims.iss, externalId]) : externalId,
+    username: trim(claims.preferred_username) || null,
     email:
       trim(claims.email) || trim(claims.preferred_username) || trim(claims.upn) || null,
     name: fullName,
@@ -249,6 +273,24 @@ export const resolveIdentity = async (db, req) => {
   if (!credentials) return { reason: 'missing-credentials' };
 
   const { externalId, email, name } = credentials;
+  if (INSTANCE_ID) {
+    // Hosting grants entry; each dedicated instance owns one shared workspace.
+    // Never use email-based staff promotion or local invites in this mode.
+    ensureTenant(db, INSTANCE_ID);
+    const existing = findMemberByExternalId(db, externalId);
+    if (existing && existing.tenantId !== INSTANCE_ID) {
+      throw new Error('Existing member belongs to a different workspace; migration is required');
+    }
+    const member = existing ?? createMember(db, {
+      id: randomUUID(), tenantId: INSTANCE_ID, externalId, email, name, role: 'member',
+    });
+    touchMember(db, externalId);
+    return {
+      member: { ...member, email, name, username: credentials.username },
+      tenantId: INSTANCE_ID,
+      isAdmin: member.role === 'admin',
+    };
+  }
   const emailKey = email ? email.toLowerCase() : '';
   // Our own staff are provisioned automatically; everyone else needs an invite.
   const isStaff = Boolean(emailKey) && ADMIN_EMAILS.has(emailKey);
