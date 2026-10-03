@@ -47,8 +47,12 @@ build:
 typecheck:
     mise exec -- npx tsc --noEmit
 
+# Prove dedicated-instance access and identity boundaries.
+test-auth:
+    mise exec -- node --test api/identity.test.js
+
 # Run the repository's required local checks.
-check: typecheck build
+check: test-auth typecheck build
 
 # Regenerate the checked-in starter templates. Review the resulting diff.
 seed-templates:

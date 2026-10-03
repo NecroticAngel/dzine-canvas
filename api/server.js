@@ -768,6 +768,7 @@ api.get('/me', (req, res) => {
       id: member.id,
       email: member.email,
       name: member.name,
+      username: member.username ?? null,
       role: member.role,
     },
     tenant: { id: tenantId, name: getTenant(db, tenantId)?.name ?? tenantId },
