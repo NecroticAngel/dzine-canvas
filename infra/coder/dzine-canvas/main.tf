@@ -32,6 +32,6 @@ module "workspace" {
 }
 
 locals {
-  # Project logo bundled with the template so private assets need no browser authentication.
-  project_icon = "data:image/png;base64,${filebase64("${path.module}/icon.png")}"
+  # Same project logo as the template card; hosted by the Coder Terraform root.
+  project_icon = "/project-icons/dzine-canvas.png"
 }
