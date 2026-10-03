@@ -2110,8 +2110,8 @@ if (BASE_PATH) {
 
 const renderIndex = (_req, res) => {
   const html = readFileSync(path.join(WEB_DIR, 'index.html'), 'utf8').replace(
-    '<html lang="en">',
-    `<html lang="en" data-base-path="${BASE_PATH}">`,
+    '<html ',
+    `<html data-base-path="${BASE_PATH}" `,
   );
   res.type('html').send(html);
 };

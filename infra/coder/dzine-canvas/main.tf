@@ -22,7 +22,7 @@ module "workspace" {
   default_repo       = "git@github.com:NecroticAngel/dzine-canvas.git"
   repo_description   = "Git repository URL to clone (SSH or HTTPS)"
   image              = "ghcr.io/haakco/coder-workspace-playwright:latest"
-  bootstrap_commands = ["npm ci"]
+  bootstrap_commands = ["npm ci --legacy-peer-deps"]
   dev_apps = {
     editor = { display_name = "Dzine Editor", port = 4200, icon = local.project_icon }
     api    = { display_name = "Templates API", port = 4201, icon = "/emojis/1f50c.png" }

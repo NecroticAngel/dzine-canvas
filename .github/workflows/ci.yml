@@ -26,3 +26,4 @@ jobs:
       - run: helm lint infra/helm/dzine-canvas
       - run: helm template demo infra/helm/dzine-canvas >/tmp/dzine-canvas.yaml
       - run: docker build --tag dzine-canvas:ci .
+      - run: node scripts/check-container.mjs dzine-canvas:ci

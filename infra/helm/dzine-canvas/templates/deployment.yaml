@@ -37,6 +37,8 @@ spec:
               value: /data
             - name: TRUST_PROXY
               value: {{ .Values.trustProxy | quote }}
+            - name: CORS_ORIGINS
+              value: {{ printf "https://%s" .Values.host | quote }}
             - name: AUTH_MODE
               value: oidc
             - name: OIDC_ISSUER
