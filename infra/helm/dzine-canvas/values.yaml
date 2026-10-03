@@ -11,6 +11,13 @@ image:
   tag: 0.1.0
   pullPolicy: IfNotPresent
 
+# The API verifies the signed identity token forwarded by the OIDC ingress.
+auth:
+  issuer: ""
+  jwksUrl: ""
+  audience: ""
+  adminEmails: []
+
 imagePullSecrets: []
 existingClaim: dzine-canvas-demo-data
 

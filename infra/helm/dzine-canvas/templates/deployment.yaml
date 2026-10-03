@@ -37,6 +37,16 @@ spec:
               value: /data
             - name: TRUST_PROXY
               value: {{ .Values.trustProxy | quote }}
+            - name: AUTH_MODE
+              value: oidc
+            - name: OIDC_ISSUER
+              value: {{ .Values.auth.issuer | quote }}
+            - name: OIDC_JWKS_URL
+              value: {{ .Values.auth.jwksUrl | quote }}
+            - name: OIDC_AUDIENCE
+              value: {{ .Values.auth.audience | quote }}
+            - name: AUTH_ADMIN_EMAILS
+              value: {{ join "," .Values.auth.adminEmails | quote }}
           ports:
             - name: http
               containerPort: 4201
