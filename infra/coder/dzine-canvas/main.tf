@@ -24,8 +24,8 @@ module "workspace" {
   image              = "ghcr.io/haakco/coder-workspace-playwright:latest"
   bootstrap_commands = ["npm ci"]
   dev_apps = {
-    editor = { display_name = "Dzine Editor", port = 4200 }
-    api    = { display_name = "Templates API", port = 4201 }
+    editor = { display_name = "Dzine Editor", port = 4200, icon = "/emojis/1f3a8.png" }
+    api    = { display_name = "Templates API", port = 4201, icon = "/emojis/1f50c.png" }
   }
   symlink_path              = "/home/coder/Dev/Jo/dzine-canvas"
   rewrite_https_repo_to_ssh = true
