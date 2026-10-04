@@ -39,10 +39,11 @@ const fromEnv = (name, fallback = '') => trim(process.env[name]) || fallback;
 
 const NODE_ENV = fromEnv('NODE_ENV', 'development');
 const ISSUER = fromEnv('OIDC_ISSUER');
-const JWKS_URL = fromEnv(
-  'OIDC_JWKS_URL',
-  ISSUER ? `${ISSUER.replace(/\/+$/, '')}/.well-known/jwks.json` : '',
-);
+/** Explicit key URL. When unset the provider's discovery document is asked. */
+const JWKS_URL = fromEnv('OIDC_JWKS_URL');
+const DISCOVERY_URL = ISSUER
+  ? `${ISSUER.replace(/\/+$/, '')}/.well-known/openid-configuration`
+  : '';
 const AUDIENCE = fromEnv('OIDC_AUDIENCE');
 const HMAC_SECRET = fromEnv('OIDC_HMAC_SECRET');
 const TOKEN_HEADER = fromEnv('AUTH_TOKEN_HEADER', 'authorization').toLowerCase();
@@ -53,6 +54,17 @@ const STAFF_TENANT = fromEnv('AUTH_STAFF_TENANT', 'staff');
 const DEV_TENANT = fromEnv('AUTH_DEV_TENANT', fromEnv('NECROZINE_DEFAULT_USER_ID', 'default'));
 const DEV_USER = fromEnv('AUTH_DEV_USER', 'dev-user');
 const DEV_EMAIL = fromEnv('AUTH_DEV_EMAIL', 'dev@localhost');
+/**
+ * Whether an authenticated person with no invite gets a workspace of their own.
+ *
+ * Off restores the invite-only behaviour the API shipped with: a valid stranger
+ * is refused with `no-workspace` until an administrator invites them. On, they
+ * are given their own tenant on first sign-in and are its admin. An invite still
+ * wins, so turning this on does not change life for anybody who was invited.
+ */
+const ALLOW_SIGNUP = fromEnv('AUTH_ALLOW_SIGNUP', 'true') !== 'false';
+const CLIENT_ID = fromEnv('OIDC_CLIENT_ID', 'dzine-canvas');
+const SCOPES = fromEnv('OIDC_SCOPES', 'openid profile email');
 const LEEWAY_SECONDS = Number(fromEnv('AUTH_CLOCK_LEEWAY_SECONDS', '60')) || 60;
 const ADMIN_EMAILS = new Set(
   fromEnv('AUTH_ADMIN_EMAILS')
@@ -77,8 +89,8 @@ export const authConfigError = (() => {
   if (!['oidc', 'headers', 'dev'].includes(MODE)) {
     return `Unknown AUTH_MODE "${MODE}". Expected oidc, headers or dev.`;
   }
-  if (MODE === 'oidc' && !JWKS_URL) {
-    return 'AUTH_MODE=oidc requires OIDC_ISSUER or OIDC_JWKS_URL so tokens can be verified.';
+  if (MODE === 'oidc' && !JWKS_URL && !ISSUER) {
+    return 'AUTH_MODE=oidc requires OIDC_ISSUER (to discover keys) or OIDC_JWKS_URL so tokens can be verified.';
   }
   if (MODE === 'headers' && fromEnv('AUTH_TRUST_PROXY_HEADERS_ACK') !== 'true') {
     return 'AUTH_MODE=headers trusts identity headers, so it only works when the API is reachable solely through the authenticating proxy. Acknowledge with AUTH_TRUST_PROXY_HEADERS_ACK=true.';
@@ -97,18 +109,24 @@ export const authConfig = {
   tokenHeader: TOKEN_HEADER,
   adminEmails: [...ADMIN_EMAILS],
   staffTenant: STAFF_TENANT,
+  allowSignup: ALLOW_SIGNUP,
+  clientId: CLIENT_ID,
+  scopes: SCOPES,
 };
 
 export const describeAuth = () => {
+  const signup = ALLOW_SIGNUP
+    ? ' Open signup: a verified stranger gets a workspace of their own (set AUTH_ALLOW_SIGNUP=false for invite-only).'
+    : ' Invite-only: a verified stranger with no invite is refused.';
   if (MODE === 'dev') {
     return `dev — every request is treated as ${DEV_EMAIL} in tenant "${DEV_TENANT}". DEVELOPMENT ONLY.`;
   }
   if (MODE === 'headers') {
-    return `headers — trusting "${USER_HEADER}"/"${EMAIL_HEADER}" from a proxy that authenticates callers.`;
+    return `headers — trusting "${USER_HEADER}"/"${EMAIL_HEADER}" from a proxy that authenticates callers.${signup}`;
   }
-  return `oidc — verifying tokens from ${TOKEN_HEADER} against ${JWKS_URL}${
-    AUDIENCE ? ` (audience ${AUDIENCE})` : ''
-  }.`;
+  return `oidc — verifying tokens from ${TOKEN_HEADER} against ${
+    JWKS_URL ? JWKS_URL : `the keys published by ${ISSUER}`
+  }${AUDIENCE ? ` (audience ${AUDIENCE})` : ''}. Client for the browser: ${CLIENT_ID}.${signup}`;
 };
 
 /* --- Token verification ------------------------------------------------- */
@@ -130,15 +148,50 @@ const HMAC_ALGORITHMS = { HS256: 'sha256', HS384: 'sha384', HS512: 'sha512' };
 const JWKS_TTL_MS = 10 * 60 * 1000;
 let jwksCache = { url: '', keys: [], fetchedAt: 0 };
 
+/**
+ * The provider's signing-key URL.
+ *
+ * `OIDC_JWKS_URL` wins when it is set. Otherwise the discovery document is asked
+ * for `jwks_uri`, because guessing does not work: the usual guess,
+ * `{issuer}/.well-known/jwks.json`, is a **404 on Keycloak 26** — which serves
+ * its keys at `/protocol/openid-connect/certs` and tells you so only in
+ * discovery. The guess is kept as a last resort, for a provider that publishes
+ * the old path and nothing else.
+ */
+let resolvedJwksUrl = JWKS_URL;
+const resolveJwksUrl = async () => {
+  if (resolvedJwksUrl) return resolvedJwksUrl;
+  if (DISCOVERY_URL) {
+    try {
+      const response = await fetch(DISCOVERY_URL, {
+        headers: { accept: 'application/json' },
+      });
+      if (response.ok) {
+        const document = await response.json();
+        if (typeof document?.jwks_uri === 'string' && document.jwks_uri) {
+          resolvedJwksUrl = document.jwks_uri;
+          return resolvedJwksUrl;
+        }
+      }
+    } catch {
+      // Fall through to the legacy path below.
+    }
+  }
+  resolvedJwksUrl = ISSUER ? `${ISSUER.replace(/\/+$/, '')}/.well-known/jwks.json` : '';
+  return resolvedJwksUrl;
+};
+
 const loadJwks = async (force = false) => {
+  const url = await resolveJwksUrl();
+  if (!url) throw new Error('No JWKS URL is configured or discoverable for this issuer');
   const fresh = Date.now() - jwksCache.fetchedAt < JWKS_TTL_MS;
-  if (!force && jwksCache.url === JWKS_URL && fresh) return jwksCache.keys;
-  const response = await fetch(JWKS_URL, { headers: { accept: 'application/json' } });
+  if (!force && jwksCache.url === url && fresh) return jwksCache.keys;
+  const response = await fetch(url, { headers: { accept: 'application/json' } });
   if (!response.ok) throw new Error(`JWKS request failed with ${response.status}`);
   const body = await response.json();
   const keys = Array.isArray(body?.keys) ? body.keys : [];
   if (!keys.length) throw new Error('JWKS response contained no keys');
-  jwksCache = { url: JWKS_URL, keys, fetchedAt: Date.now() };
+  jwksCache = { url, keys, fetchedAt: Date.now() };
   return keys;
 };
 
@@ -241,6 +294,22 @@ const readCredentials = async (req) => {
 };
 
 /**
+ * The workspace id for a brand-new signup.
+ *
+ * Derived from the whole address rather than just the local part, so
+ * `sam@acme.com` and `sam@example.com` cannot collide, and stable for that
+ * address — which keeps it readable in paths and in the admin list.
+ */
+const tenantIdForEmail = (email) => {
+  const slug = trim(email)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48);
+  return slug || `tenant-${randomUUID().slice(0, 8)}`;
+};
+
+/**
  * Map a request to `{ member, tenantId, isAdmin }`, or a `{ reason }` when the
  * caller is authenticated but not allowed in.
  */
@@ -299,9 +368,25 @@ export const resolveIdentity = async (db, req) => {
     return { member, tenantId: member.tenantId, isAdmin: true };
   }
 
-  // Invite-only: no member row and no invite means no workspace.
+  // Invite-only: no member row and no invite means no workspace. Unless signup is
+  // open, in which case this stranger is the first member of a workspace of
+  // their own — the invite check above ran first, so anyone who *was* invited
+  // still lands in the workspace they were invited to.
   const invite = emailKey ? findInvite(db, emailKey) : null;
-  if (!invite) return { reason: 'not-invited', email: email ?? externalId };
+  if (!invite) {
+    if (!ALLOW_SIGNUP) return { reason: 'not-invited', email: email ?? externalId };
+    const tenantId = tenantIdForEmail(emailKey || externalId);
+    ensureTenant(db, tenantId, name || email || tenantId);
+    const member = createMember(db, {
+      id: randomUUID(),
+      tenantId,
+      externalId,
+      email,
+      name,
+      role: 'admin',
+    });
+    return { member, tenantId, isAdmin: true };
+  }
 
   ensureTenant(db, invite.tenantId);
   const member = createMember(db, {

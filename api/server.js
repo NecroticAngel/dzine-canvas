@@ -133,7 +133,7 @@ const identity = createIdentityMiddleware(db);
 // a design names; without it an anonymous reader gets fallback type and no
 // indication why. It is a fixed list of open-licensed families, so there is
 // nothing in it that belongs to a tenant.
-const PUBLIC_ROUTES = new Set(['/health', '/', '/fonts']);
+const PUBLIC_ROUTES = new Set(['/health', '/', '/fonts', '/auth/config']);
 /**
  * Path prefixes that must work without an identity.
  *
@@ -739,6 +739,25 @@ api.get('/health', (req, res) => {
   });
 });
 
+/**
+ * What the browser needs in order to sign someone in.
+ *
+ * Public on purpose: an unauthenticated page has to know whether there is a
+ * sign-in at all, and everything in here is public by definition in OIDC — an
+ * issuer, a client id, and the scopes to ask for. Serving it from the API is
+ * what lets the SPA stay build-once: point `OIDC_ISSUER` at a different realm
+ * and the browser follows, with no rebuild.
+ */
+api.get('/auth/config', (_req, res) => {
+  res.json({
+    mode: authConfig.mode,
+    issuer: authConfig.issuer,
+    clientId: authConfig.clientId,
+    scopes: authConfig.scopes,
+    allowSignup: authConfig.allowSignup,
+  });
+});
+
 /** Who the caller is, and which workspace they belong to. */
 api.get('/me', (req, res) => {
   const { member, tenantId, isAdmin } = req.identity;
@@ -1020,11 +1039,16 @@ api.delete('/templates/:id', (req, res) => {
   const tenantId = tenantOf(req);
   const id = safeId(req.params.id);
   const row = getTemplate(db, id);
-  // A client can delete its own templates. A shared template is ours to manage.
+  // A client can delete the templates it owns, of any scope it is allowed to
+  // create. An administrator can delete anything — including a template that is
+  // private to a client, which the admin screen needs and which the old rule
+  // refused with a 404 that looked like the template had already gone.
   const allowed =
     row &&
-    isTemplateVisible(db, tenantId, id) &&
-    (row.scope === 'tenant' ? row.tenantId === tenantId : req.identity.isAdmin);
+    (req.identity.isAdmin ||
+      (row.scope === 'tenant' &&
+        row.tenantId === tenantId &&
+        isTemplateVisible(db, tenantId, id)));
   if (!allowed) {
     res.status(404).json({ error: 'Template not found' });
     return;
@@ -1115,15 +1139,36 @@ api.get('/admin/templates', requireAdmin, (req, res) => {
       name: row.name,
       scope: row.scope,
       tenantId: row.tenantId,
+      // The preview comes from the admin route, not `/templates/:id/thumb`: that
+      // one is scoped to the caller's own workspace, so an admin looking at a
+      // template private to somebody else would be handed a URL that 404s for
+      // them (and surfaces as ERR_BLOCKED_BY_ORB in the browser).
       thumbUrl: thumbUrlFor(
         req,
-        'templates',
+        'admin/templates',
         row,
         templateThumbDir(templateDirFor(row.scope, row.tenantId)),
       ),
       grants: row.scope === 'global' ? listTemplateGrants(db, row.id) : [],
     })),
   );
+});
+
+/** Admin preview of any template, whichever workspace owns it. */
+api.get('/admin/templates/:id/thumb', requireAdmin, (req, res) => {
+  const id = safeId(req.params.id);
+  const row = getTemplate(db, id);
+  const filePath = row?.thumbPath
+    ? path.join(
+        templateThumbDir(templateDirFor(row.scope, row.tenantId)),
+        path.basename(row.thumbPath),
+      )
+    : null;
+  if (!filePath || !existsSync(filePath)) {
+    res.status(404).json({ error: 'No thumbnail for this template' });
+    return;
+  }
+  res.type(path.extname(filePath)).sendFile(filePath);
 });
 
 /**
