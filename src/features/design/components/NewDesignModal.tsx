@@ -7,8 +7,6 @@ import SquaresFourIcon from '@duyank/icons/regular/SquaresFour';
 import { PRESET_GROUPS, type CanvasPreset, type PresetGroup } from '../config/canvasPresets';
 import { ACCENT, ICONS, PresetCard, PresetPreview } from './canvas-size/presetCards';
 
-const ACCENT_HOVER = '#2f7ae5';
-
 export type NewDesignModalProps = {
   open: boolean;
   onClose: () => void;
@@ -414,11 +412,11 @@ export const NewDesignModal = ({ open, onClose, onCreate }: NewDesignModalProps)
                       fontWeight: 800,
                       border: 'none',
                       borderRadius: 8,
-                      background: ACCENT,
+                      background: 'var(--app-brand-gradient)',
                       color: '#fff',
                       cursor: 'pointer',
-                      transition: 'background .15s ease',
-                      ':hover': { background: ACCENT_HOVER },
+                      transition: 'filter .15s ease',
+                      ':hover': { filter: 'brightness(1.09)' },
                       ':disabled': {
                         opacity: 0.5,
                         cursor: 'not-allowed',
@@ -635,10 +633,10 @@ export const NewDesignModal = ({ open, onClose, onCreate }: NewDesignModalProps)
                         fontWeight: 800,
                         border: 'none',
                         borderRadius: 8,
-                        background: ACCENT,
+                        background: 'var(--app-brand-gradient)',
                         color: '#fff',
                         cursor: 'pointer',
-                        ':hover': { background: ACCENT_HOVER },
+                        ':hover': { filter: 'brightness(1.09)' },
                         ':disabled': { opacity: 0.5, cursor: 'not-allowed' },
                       }}
                     >

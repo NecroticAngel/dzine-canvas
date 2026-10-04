@@ -83,6 +83,14 @@ const menuItemCss = {
   },
 };
 
+/**
+ * The repository link in the header. Hidden for now, deliberately kept rather
+ * than deleted — it is cheap to bring back and might be wanted later — so this
+ * is a flag to flip rather than code to rewrite. This is the only copy: nothing
+ * else in the app links to the repository.
+ */
+const SHOW_REPO_LINK: boolean = false;
+
 const EditorHeaderForwardRef: ForwardRefRenderFunction<
   HTMLDivElement,
   HeaderLayoutProps
@@ -779,30 +787,32 @@ const EditorHeaderForwardRef: ForwardRefRenderFunction<
             <ArrowClockwiseIcon />
           </div>
         </div>
-        <a
-          href="https://github.com/NecroticAngel/dzine-canvas"
-          rel="noreferrer"
-          target="_blank"
-        >
-          <span
-            css={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#fff',
-              background: '#3a3a4c',
-              width: 36,
-              height: 36,
-              borderRadius: '50%',
-              cursor: 'pointer',
-              ':hover': {
-                background: 'rgba(58,58,76,0.5)',
-              },
-            }}
+        {SHOW_REPO_LINK && (
+          <a
+            href="https://github.com/NecroticAngel/dzine-canvas"
+            rel="noreferrer"
+            target="_blank"
           >
-            <GithubLogoIcon />
-          </span>
-        </a>
+            <span
+              css={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#fff',
+                background: '#3a3a4c',
+                width: 36,
+                height: 36,
+                borderRadius: '50%',
+                cursor: 'pointer',
+                ':hover': {
+                  background: 'rgba(58,58,76,0.5)',
+                },
+              }}
+            >
+              <GithubLogoIcon />
+            </span>
+          </a>
+        )}
         <div
           css={{
             cursor: 'pointer',

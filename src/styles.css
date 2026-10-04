@@ -48,6 +48,33 @@ html[data-theme='dark'] {
   --app-ruler-selection: rgba(110, 168, 255, 0.22);
 }
 
+/*
+ * Brand palette, sampled from `assets/dzine_canvas.png` so the UI can echo the
+ * logo: amber -> orange -> red -> magenta -> purple, following the gear.
+ *
+ * The orange is one step deeper than the logo's own #fb5107. White text on that
+ * orange only reaches 3.3:1, which fails AA for a 15px bold label; this one
+ * clears 4.5:1, and at button size the two are hard to tell apart. The brighter
+ * logo orange is still available as `--app-brand-amber`'s neighbour below for
+ * accents that carry no text.
+ */
+:root {
+  --app-brand-amber: #fdae16;
+  --app-brand-orange: #d0430a;
+  --app-brand-magenta: #b00e54;
+  --app-brand-purple: #750167;
+  --app-brand-gradient: linear-gradient(
+    135deg,
+    #d0430a 0%,
+    #c4271f 28%,
+    #b00e54 62%,
+    #750167 100%
+  );
+  --app-brand-glow: 0 10px 28px rgba(190, 30, 90, 0.32);
+  /* The logo's amber, for edges and accents that carry no text. */
+  --app-brand-edge: inset 0 1px 0 rgba(253, 174, 22, 0.6);
+}
+
 html, body {
     margin: 0;
     font-family: 'Nunito', sans-serif;

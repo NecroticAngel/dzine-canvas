@@ -1,41 +1,130 @@
+import CaretDoubleLeftIcon from '@duyank/icons/regular/CaretDoubleLeft';
+import CaretDoubleRightIcon from '@duyank/icons/regular/CaretDoubleRight';
 import { useEditor } from '@lidojs/design-editor';
+import { useEffect, useState } from 'react';
 
 const pageThumbColor = (page: {
   layers?: { ROOT?: { props?: { color?: unknown } } };
 }) => String(page.layers?.ROOT?.props?.color ?? '#ffffff');
 
+const PAGES_PANEL_KEY = 'necrozine-pages-panel';
+
+/**
+ * Whether the panel starts minimised. Same storage shape as the canvas view
+ * (`necrozine-canvas-view`), so a future option has somewhere obvious to go.
+ */
+const readCollapsed = () => {
+  try {
+    const raw = localStorage.getItem(PAGES_PANEL_KEY);
+    if (!raw) return false;
+    return (JSON.parse(raw) as { collapsed?: unknown }).collapsed === true;
+  } catch {
+    return false;
+  }
+};
+
 export const PagesPanel = () => {
   const { pages, activePage, actions } = useEditor();
+  const [collapsed, setCollapsed] = useState(readCollapsed);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(PAGES_PANEL_KEY, JSON.stringify({ collapsed }));
+    } catch {
+      // A full quota must not break the editor.
+    }
+  }, [collapsed]);
+
+  // One control for both states, so the strip that is left can be reopened by the
+  // same thing that closed it — a panel you cannot get back is worse than an open
+  // one, which is why minimising keeps a target on screen.
+  const minimiseButton = (
+    <button
+      type="button"
+      css={{
+        flexShrink: 0,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: 26,
+        height: 26,
+        border: 'none',
+        borderRadius: 6,
+        background: 'transparent',
+        color: 'var(--app-text)',
+        cursor: 'pointer',
+        ':hover': {
+          background: 'var(--app-surface-2)',
+          color: 'var(--app-text-strong)',
+        },
+      }}
+      onClick={() => setCollapsed((value) => !value)}
+      aria-expanded={!collapsed}
+      aria-label={
+        collapsed ? 'Show the pages panel' : 'Minimise the pages panel'
+      }
+      title={collapsed ? 'Show pages' : 'Minimise pages'}
+    >
+      {collapsed ? <CaretDoubleLeftIcon /> : <CaretDoubleRightIcon />}
+    </button>
+  );
 
   return (
     <div
       css={{
-        width: 168,
+        // Narrowing rather than hiding: the toggle has to stay reachable.
+        width: collapsed ? 36 : 168,
         flexShrink: 0,
         display: 'flex',
         flexDirection: 'column',
         background: 'var(--app-panel)',
         borderLeft: '1px solid var(--app-border-strong)',
         color: 'var(--app-text)',
+        transition: 'width .15s ease',
         '@media (max-width: 900px)': {
           display: 'none',
         },
       }}
     >
+      {collapsed && (
+        <div
+          css={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 10,
+            padding: '10px 0',
+          }}
+        >
+          {minimiseButton}
+          <span
+            css={{
+              writingMode: 'vertical-rl',
+              fontSize: 11,
+              fontWeight: 700,
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+              color: 'var(--app-text-muted)',
+            }}
+          >
+            Pages
+          </span>
+        </div>
+      )}
       <div
         css={{
           height: 48,
           flexShrink: 0,
-          display: 'flex',
+          display: collapsed ? 'none' : 'flex',
           alignItems: 'center',
-          justifyContent: 'space-between',
+          gap: 8,
           padding: '0 12px',
           borderBottom: '1px solid var(--app-border)',
           fontWeight: 700,
           color: 'var(--app-text-strong)',
         }}
       >
-        <span>Pages</span>
+        <span css={{ marginRight: 'auto' }}>Pages</span>
         <button
           type="button"
           css={{
@@ -54,14 +143,15 @@ export const PagesPanel = () => {
         >
           + Add
         </button>
+        {minimiseButton}
       </div>
 
       <div
         css={{
           flex: 1,
+          display: collapsed ? 'none' : 'flex',
           overflowY: 'auto',
           padding: 12,
-          display: 'flex',
           flexDirection: 'column',
           gap: 10,
         }}
