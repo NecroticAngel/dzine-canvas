@@ -23,11 +23,15 @@ import {
   type SyncStatus,
 } from '../../../utils/designLibrary';
 import { ThemeToggle, useAppTheme } from '../../../shared/theme';
+import { AuthedImage } from '../../../shared/components/AuthedImage';
+import { requiresSignIn, signOut } from '../../../utils/oidc';
 import { fetchSession, type Session } from '../../../utils/session';
 import { NewDesignModal } from '../components/NewDesignModal';
 
 type WelcomePageProps = {
   onOpenDesign: (id: string) => void;
+  /** Only rendered for administrators; the API refuses the rest. */
+  onOpenAdmin?: () => void;
 };
 
 type RenameDialog = {
@@ -57,7 +61,7 @@ const formatUpdated = (ts: number) => {
   }
 };
 
-export const WelcomePage = ({ onOpenDesign }: WelcomePageProps) => {
+export const WelcomePage = ({ onOpenDesign, onOpenAdmin }: WelcomePageProps) => {
   const { mode } = useAppTheme();
   const [designs, setDesigns] = useState<DesignSummary[]>([]);
   const [conflicts, setConflicts] = useState<DesignSummary[]>([]);
@@ -253,6 +257,51 @@ export const WelcomePage = ({ onOpenDesign }: WelcomePageProps) => {
           padding: '20px 28px',
         }}
       >
+        {requiresSignIn() && (
+          <button
+            type="button"
+            onClick={() => void signOut()}
+            title={
+              session?.member?.email
+                ? `Signed in as ${session.member.email}`
+                : 'Sign out'
+            }
+            css={{
+              marginRight: 10,
+              border: '1px solid var(--app-border)',
+              background: 'transparent',
+              color: 'var(--app-text)',
+              borderRadius: 10,
+              padding: '9px 14px',
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: 'pointer',
+              ':hover': { color: 'var(--app-text-strong)' },
+            }}
+          >
+            Sign out
+          </button>
+        )}
+        {session?.isAdmin && onOpenAdmin && (
+          <button
+            type="button"
+            onClick={onOpenAdmin}
+            css={{
+              marginRight: 10,
+              border: '1px solid var(--app-border)',
+              background: 'var(--app-panel)',
+              color: 'var(--app-text-strong)',
+              borderRadius: 10,
+              padding: '9px 14px',
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: 'pointer',
+              ':hover': { borderColor: 'var(--app-brand-magenta)' },
+            }}
+          >
+            Admin
+          </button>
+        )}
         <ThemeToggle />
       </header>
 
@@ -305,15 +354,31 @@ export const WelcomePage = ({ onOpenDesign }: WelcomePageProps) => {
             onClick={() => setShowNewDesign(true)}
             css={{
               border: 'none',
-              background: '#3d8eff',
+              // The logo's own gradient, so the main call to action belongs to the
+              // brand rather than to the generic blue accent.
+              background: 'var(--app-brand-gradient)',
               color: '#fff',
               borderRadius: 10,
               padding: '12px 20px',
               fontWeight: 800,
               fontSize: 15,
               cursor: 'pointer',
-              boxShadow: '0 10px 28px rgba(61,142,255,.35)',
-              ':hover': { background: '#2f7ae5' },
+              boxShadow:
+                'var(--app-brand-glow), var(--app-brand-edge)',
+              transition: 'filter .14s ease, transform .14s ease',
+              ':hover': {
+                filter: 'brightness(1.08)',
+                transform: 'translateY(-1px)',
+              },
+              ':active': {
+                filter: 'brightness(.96)',
+                transform: 'translateY(0)',
+              },
+              ':focus-visible': {
+                outline: 'none',
+                boxShadow:
+                  'var(--app-brand-glow), var(--app-brand-edge), 0 0 0 3px rgba(253,174,22,.5)',
+              },
             }}
           >
             New design
@@ -508,9 +573,8 @@ export const WelcomePage = ({ onOpenDesign }: WelcomePageProps) => {
                   }}
                 >
                   {template.img ? (
-                    <img
+                    <AuthedImage
                       alt={template.name}
-                      loading="lazy"
                       src={template.img}
                       css={{
                         display: 'block',
@@ -628,12 +692,20 @@ export const WelcomePage = ({ onOpenDesign }: WelcomePageProps) => {
                 fontWeight: 700,
                 fontSize: 15,
                 ':hover': {
-                  borderColor: '#3d8eff',
-                  background: 'rgba(61,142,255,.08)',
+                  borderColor: 'var(--app-brand-magenta)',
+                  background: 'rgba(176,14,84,.07)',
                 },
               }}
             >
-              <span css={{ fontSize: 28, lineHeight: 1 }}>+</span>
+              <span
+                css={{
+                  fontSize: 28,
+                  lineHeight: 1,
+                  color: 'var(--app-brand-orange)',
+                }}
+              >
+                +
+              </span>
               New design
             </button>
 
@@ -700,14 +772,12 @@ export const WelcomePage = ({ onOpenDesign }: WelcomePageProps) => {
                     CANVAS
                   </div>
                   {(design.thumbnail || design.thumbUrl) && (
-                    <img
+                    <AuthedImage
                       alt={`${design.name} preview`}
                       // A design created on another machine has no local data
-                      // URL, so fall back to the preview the server keeps.
+                      // URL, so fall back to the preview the server keeps. That
+                      // one needs the token, which a bare <img> cannot send.
                       src={design.thumbnail ?? design.thumbUrl}
-                      onError={(event) => {
-                        event.currentTarget.style.display = 'none';
-                      }}
                       css={{
                         position: 'absolute',
                         inset: 18,
