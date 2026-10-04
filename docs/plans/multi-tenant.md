@@ -1,6 +1,8 @@
 # Multi-tenant plan — client logins, shared templates, own designs
 
-Status: **proposed**, not started. Owner decisions locked in are marked ✅.
+Status: **implemented**. Phases 1-4 are done, plus conflict handling and sign-in. §7 keeps the
+progress and the verifications; the per-feature record lives in
+[`App_Overview.md`](../../App_Overview.md) §5. Owner decisions locked in are marked ✅.
 
 ---
 
@@ -56,6 +58,12 @@ client ──► Traefik + OIDC middleware ──► API
 **Rule: the API never trusts a bare header.** It verifies the signature of the token the middleware
 passes through and reads `sub`/`email`. A raw `X-User-Id` is forgeable by anyone who can reach the
 API, and it must be deleted. The API must also only be exposed through the ingress.
+
+**How the login actually happens (decided later, and different from the sketch above):** the browser
+signs in **itself**, with Authorization Code + PKCE against Keycloak, and sends the token to the API as
+`Authorization: Bearer`. No forward-auth middleware is needed — `api/identity.js` was already written
+to verify a token rather than trust headers, so the app is simply a courier. `AUTH_MODE=headers`
+remains for a deployment that prefers a proxy that asserts identity itself; nothing was built on it.
 
 ## 5. Data model
 
@@ -252,6 +260,27 @@ owns, so a client can never mutate what we shared.
   that cannot vary by tenant.
 - Next: **Phase 4 — hardening** (backups, rate limits, upload MIME allow-list, audit trail).
 
+### Phase 5 — sign-in — ✅ DONE (against a live Keycloak)
+
+1. **Which IdP: Keycloak.** The app redirects to it (Authorization Code + PKCE, public client) and the
+   API verifies the token it comes back with, so the provider stays a deploy-time choice and no login
+   form in this app ever sees a password.
+2. **Open signup, with invites still winning.** `AUTH_ALLOW_SIGNUP=true` gives a verified stranger a
+   workspace of their own, named from their address, as its admin; `false` restores the invite-only
+   answer in §8. The invite check runs first, so nobody invited sees a difference.
+3. `GET /auth/config` is public and tells the browser the mode, issuer, client id, scopes and whether
+   signup is open — so pointing at another realm needs no rebuild, and `AUTH_MODE=dev` shows no
+   sign-in at all.
+4. **Two bugs this found, both fixed:** the JWKS URL was *guessed* as the legacy
+   `{issuer}/.well-known/jwks.json`, which is a 404 on Keycloak 26 (keys are now taken from the
+   discovery document, which is what discovery is for); and an `<img>` can never send an
+   `Authorization` header, so every thumbnail behind an authenticated route 401'd — reported by Chrome
+   as `ERR_BLOCKED_BY_ORB`, and invisible until auth was switched on.
+5. Verified end to end against a real realm: registering on Keycloak's own page returned to the app
+   signed in, the API had created a tenant for that account, and a design made there saved into that
+   tenant while another tenant's leftovers were dropped from its gallery. Details in
+   `App_Overview.md` §5.
+
 ### Phase 1 — real identity (security floor) — ✅ DONE, all 8 items (see Progress above)
 1. Decide the IdP + claim mapping (`sub` → `members.external_id`; first login provisions or is
    rejected unless invited).
@@ -304,11 +333,11 @@ unaffected.
 
 ## 8. Open questions
 
-1. ~~Which IdP does `dzine-canvas-demo-oidc` point at, and what does it inject?~~ **Moot.** Phase 1 is
-   provider-agnostic: it reads any standard OIDC discovery document, so the provider is a deploy-time
-   choice via `OIDC_ISSUER`/`OIDC_AUDIENCE`. Nobody has pointed it at a real IdP yet — the first real
-   deployment needs someone to confirm what the cluster's ingress actually injects (the `headers`
-   mode exists for a proxy that asserts identity itself, e.g. Coder/oauth2-proxy).
+1. ~~Which IdP does `dzine-canvas-demo-oidc` point at, and what does it inject?~~ **Answered: Keycloak,
+   and nothing has to be injected.** Phase 1 is provider-agnostic — it reads any standard OIDC
+   discovery document — and Phase 5 has the browser do the sign-in itself, so the cluster's ingress
+   middleware is not in the path at all. `AUTH_MODE=headers` still exists for a deployment that wants
+the proxy to assert identity instead.
 2. ~~When an unknown person logs in successfully, do we auto-create a tenant, or reject them unless
    invited?~~ **Answered: invite-only.** A valid but unknown subject is rejected with `not-invited`
    unless their email matches a pending invite, or they are in `AUTH_ADMIN_EMAILS`.

@@ -71,13 +71,26 @@ before staging, and commit with a message file (`git commit -F <file>`) rather t
 
 ### API surface (`api/server.js`) — verified inventory
 
-Mounted at `` app.use(`${BASE_PATH}/api`, api) ``.
+Mounted at `` app.use(`${BASE_PATH}/api`, api) ``. *This list sat stale for a long time — it still
+claimed the Tier 4 asset routes did not exist — so it is now straight off the route table.*
 
-**Implemented:** `GET /health` · `GET /` · `GET|POST /templates` · `GET /templates/:id` ·
-`GET|POST /designs` · `GET /designs/:id` · `GET|POST /uploads` (multer) · `GET /media/uploads/:userId/:file`
+**Session:** `GET /health` · `GET /` · `GET /me`
+**Templates:** `GET /templates` · `GET /templates/:id` · `GET /templates/:id/thumb` ·
+`POST /templates` (your own, or — administrators only — a global one or a copy for another company) ·
+`DELETE /templates/:id` · `POST /templates/:id/use`
+**Designs:** `GET|POST /designs` · `GET|PUT|DELETE /designs/:id` · `GET /designs/:id/thumb` ·
+`POST|DELETE /designs/:id/share` · `GET /shared/:token`
+**Uploads:** `GET|POST /uploads` · `DELETE /uploads/:id` · `GET /media/uploads/:userId/:file`
+**Assets and content:** `GET /frames` · `GET /graphics` · `GET /images` · `GET /assets` ·
+`GET /assets/:id/content` · `GET /fonts` · `GET /fonts/files/:name` · `GET|PUT /brand`
+**Admin** (`requireAdmin`): `GET|POST /admin/tenants` · `GET|POST /admin/invites` ·
+`DELETE /admin/invites/:email` · `GET /admin/members` · `GET /admin/templates` ·
+`GET /admin/templates/:id/thumb` · `POST /admin/template-grants` ·
+`DELETE /admin/template-grants/:templateId/:tenantId` · `GET /admin/audit` · `POST /admin/assets` ·
+`DELETE /admin/assets/:id`
 
-**NOT implemented** (this is *why* those panels can only ever be empty):
-`/frames` · `/graphics` · `/images` · `/fonts` · `/text`
+**Still not implemented:** `/texts` and `/videos` — which is why the Text panel's own catalogue has
+nothing in it.
 
 `vite.config.ts` proxies `/api` → `http://localhost:4201`.
 
@@ -107,6 +120,8 @@ Working & verified:
 - Draw panel + `DrawToolbar` (stroke colour / width)
 - Sidebar "Business" badges removed
 - Sidebar rail tabs toggle: clicking the open tab's icon closes its panel, as does its ✕
+- Pages panel minimises to a 36px strip (remembered in `necrozine-pages-panel`)
+- Editor header's repository link is hidden behind `SHOW_REPO_LINK` — kept in the code, not deleted
 - Draw panel floats **top-left** (`left: 72, top: 44`)
 
 The per-feature record, with the exact verifications, is §5. `.serena/` is untracked but self-ignoring
@@ -463,6 +478,16 @@ no longer drops the operation (gotcha 18).
     consumers were resolving the wrong one. Nothing was wrong with the code: a fresh page load mounts
     the editor with zero errors. Reload the page before believing an error like this, and before
     trusting a browser test that runs after an edit.
+45. **The editor's view state lives in `localStorage`, not in the design.** `necrozine-canvas-view`
+    holds rulers / grid / snap / grid size and `necrozine-pages-panel` holds whether the pages panel is
+    minimised. So it is per-browser, not per-design: a test that expects the default view has to clear
+    those keys first, and one tab's toggling changes what the next tab boots into.
+46. **A browser cannot put a token on an image.** A bare `<img src="…">` sends no `Authorization`
+    header and never will, so any picture behind an authenticated route is a 401 — which Chrome then
+    reports as `net::ERR_BLOCKED_BY_ORB`, an error name that describes the symptom and hides the
+    cause. Use `AuthedImage`, which fetches through axios and renders a blob URL, for anything the API
+    serves. The same trap in reverse: an interceptor that attaches the token only to *relative* URLs
+    silently skips every absolute one, and the API hands out absolute thumbnail URLs.
 
 **State of the library (context, not a TODO).** The gallery is **empty** — 0 designs, with both
 templates still shared, so a new design is one click away and the welcome page shows its own "No designs
@@ -631,6 +656,14 @@ there should have been two.
 - `GET /frames`, `/graphics` and `/images` keep the shapes the panels already expected, so the
   front-end change was small. `/assets` and `/assets/:id/content` serve the library directly.
 - Admins publish with `POST /admin/assets` and remove with `DELETE /admin/assets/:id`; both audited.
+- **The pages panel minimises.** A chevron in its header takes it from 168px to 36px, leaving a
+  vertical "PAGES" label and the same chevron to bring it back — minimising narrows rather than hides,
+  because a panel you cannot reopen is worse than one that is open. The choice persists in
+  `necrozine-pages-panel`, the same storage shape as `necrozine-canvas-view`. Verified both ways in the
+  browser: the width, the header's `+ Add` and the page cards all go and come back together
+  (168 → 36 → 168), and the whole panel is still hidden below 900px. Note that the canvas keeps its
+  zoom when the panel closes, so what you gain is room rather than a bigger page — a re-fit on collapse
+  would be a separate decision.
 - **The rail tabs toggle their panel.** Clicking the tab whose panel is already open closes it —
   `Sidebar`'s `onChange` compares against the current tab instead of always opening — so the ✕ in the
   panel corner is a convenience rather than the only way out. Verified on every panel type, Draw
@@ -1005,6 +1038,97 @@ created in background tabs while this work was being verified. Captures now run 
 `withVisibleFrames`, which drives frames from a timer for their duration, so a background save gets its
 preview like any other (verified: `captureThumbnail` resolves in a hidden tab, and a foreground save
 still produces an `image/jpeg` of 4964 bytes).
+
+### Admin screen — templates and companies — ✅ DONE
+Everything it needs already existed server-side (`GET /admin/templates`, `POST /templates`,
+`POST /admin/template-grants`, `GET|POST /admin/tenants`); there was just no interface, so publishing a
+template meant hand-writing JSON into a directory. `?admin` — or the **Admin** button, which only
+exists for administrators — opens a screen that talks to those endpoints.
+
+- [x] **Publish a template** either from one of your designs (its preview is copied across, verified:
+      `thumb: true` afterwards) or by pasting/uploading a design export. The id is slugged from the
+      name, and `overwrite` replaces an existing one.
+- [x] **Assign it to one company or all of them**, with the semantics stated in the UI rather than
+      hidden, because they are not the obvious ones: a *global* template is visible to **everyone until
+      it has a grant**, and each grant **narrows** it. So the three choices are "Everyone" (no grants),
+      "Only some companies" (one shared template, limited to the companies ticked) and "One company,
+      its own copy" (a `tenant`-scoped template nobody else can see).
+- [x] **Manage companies** — list plus create, in the same screen, because you cannot assign to a
+      company that does not exist yet.
+- [x] Verified against the running API, not just the UI: publishing from a design gave
+      `scope: global`, `grants: []`, `thumb: true`; a two-page export published **page 1 only**
+      (stored `boxSize` 600×600, not the second page's 900×300); granting to a company set the badge to
+      "Only 1 company" and `grants: ['default']`, and the **Everyone** button returned it to `[]`; a
+      private copy landed as `scope: tenant, tenantId: test-studio` and was **absent from the owning
+      tenant's own `/templates`** — which is the whole point of a copy. All four published templates
+      appeared in `GET /templates` for the client, and each test template and company was removed
+      afterwards.
+- [x] **Found and fixed a preview bug the screen exposed.** The admin list advertised
+      `/templates/:id/thumb`, which is scoped to the *caller's* workspace, so an administrator looking
+      at a company's private template got a 404 (`ERR_BLOCKED_BY_ORB` in the browser) — the same
+      "advertises a URL with no file behind it" shape as gotcha 39's neighbour. There is now an
+      `GET /admin/templates/:id/thumb`, and the list points at it. `paste-test` correctly advertises
+      **no** thumbnail at all, and the card shows its placeholder.
+- [x] **Found and fixed a delete gap.** `DELETE /templates/:id` required *ownership* of a
+      `tenant`-scoped template even for an administrator, so the UI's Delete button answered 404 for a
+      client's private template. The rule is now "an admin can delete anything; a client can delete the
+      tenant templates it owns" — written out rather than inferred from the old one-liner.
+
+**Worth knowing:** grants come back as objects (`{ tenantId, tenantName, grantedAt }`), not ids, which
+is what `POST /admin/template-grants` returns as well. The first version of the client typed them as
+strings and React refused to render them.
+
+### Sign-in with Keycloak — ✅ DONE, verified against a live realm
+Everything is Keycloak's: the app redirects to it, and the API verifies the token it hands back.
+There is no login form in this app and no password ever reaches it — only the client id and the
+scopes come from us.
+
+- [x] **Authorization Code + PKCE, public client.** `src/utils/oidc.ts` builds the authorize URL
+      (`state` + `code_challenge` + `S256`), exchanges the code against the provider's token
+      endpoint, and stores the tokens in `sessionStorage` — per tab, gone when it closes. A bare axios
+      instance is used for the provider so our access token is never sent *to* it.
+- [x] **The API stays the authority.** Token verification was already there (`api/identity.js`, JWKS
+      via `node:crypto`); the app is only ever a courier. Verified live: a token from Keycloak is
+      accepted, and `/api/me` answers with the member and their workspace.
+- [x] **The app learns how to sign in from the API**, not from a build-time variable:
+      `GET /auth/config` is public and returns the mode, issuer, client id, scopes and whether signup
+      is open. `AUTH_MODE=dev` therefore shows no sign-in at all, so local development is unchanged.
+- [x] **Open signup, with invites still winning.** `AUTH_ALLOW_SIGNUP=true` gives a verified stranger
+      a workspace of their own, named from their address, with themselves as admin; `false` restores
+      invite-only. The invite check runs first, so an invited person still lands where they were
+      invited. Verified live end to end: registering on Keycloak's own page returned to the app signed
+      in, and the API had **created `tester-example-com`** for that account. That account then created
+      a design, which saved through the authenticated API into its own tenant, and its gallery showed
+      the other tenant's leftovers **dropped** rather than re-uploaded — the fix from earlier doing its
+      job in a new place.
+- [x] **The sign-in screen** (`src/shared/components/SignInScreen.tsx`): Sign in, and Create an
+      account when the deployment allows it, plus the provider's hostname and the reassurance that
+      the password is not ours. Errors from the provider are shown rather than swallowed.
+
+**Two real bugs this work found, both fixed:**
+
+1. **The JWKS URL was guessed wrong.** `identity.js` derived `{issuer}/.well-known/jwks.json`, which
+   is the legacy path and a **404 on Keycloak 26** — every token was rejected with
+   `JWKS request failed with 404`, which is at least an honest error. Keys are now taken from the
+   provider's discovery document (`jwks_uri`), with `OIDC_JWKS_URL` still there to override, and the
+   legacy guess kept only as a last resort. This is the bug the plan predicted: *"nobody has pointed
+   it at a real IdP yet."*
+2. **`<img src>` cannot send an Authorization header.** Every thumbnail behind an authenticated route
+   answered 401, which Chrome reports as `ERR_BLOCKED_BY_ORB` — a missing picture with an error name
+   that says nothing about the cause, and invisible until auth was switched on. `AuthedImage` fetches
+   the bytes through the app's axios (which attaches the token) and renders a blob URL. The request
+   interceptor also had to stop assuming "relative means ours": the API hands out **absolute** URLs
+   for thumbnails, so those went out bare. Both fixed and verified: template previews now fetch
+   `200` and render from blob URLs.
+
+**Running it locally:** `docker run -d --name dzine-keycloak -p 8080:8080 -e
+KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin
+quay.io/keycloak/keycloak:26.0 start-dev`, then realm `dzine` (registration on, `sslRequired: none`)
+and a public client `dzine-canvas` with redirect URIs `http://localhost:4200/*`. Point the API at it
+with `AUTH_MODE=oidc OIDC_ISSUER=http://127.0.0.1:8080/realms/dzine OIDC_CLIENT_ID=dzine-canvas`, and
+leave `OIDC_AUDIENCE` empty unless the realm has an audience mapper. Note **port 8080, not 8090**:
+something else on this host answers 501 on 8090, which cost real time. The test account is
+`tester` / `tester@example.com` in that realm.
 
 ### Cleanups completed
 - [x] `actions.addPage()` now matches the design: it takes the size from the page you are on instead

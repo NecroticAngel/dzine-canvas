@@ -15,6 +15,24 @@
 - [ ] **Theme `DrawContent`'s hard-coded geometry** (`left: 72`, `top: 44`, `120×250`). Cosmetic: it
       floats over the selection, so it does not follow light/dark restyling. Those coordinates are the
       ones §3 lists as working and verified, which is where they came from.
+- [ ] **Some images still cannot carry the token.** `AuthedImage` exists for this and the
+      welcome page now uses it (design cards, template cards — verified: both load, from blob URLs),
+      but three places still use a bare `<img>`: the editor's Template panel, the admin screen's
+      template previews, and anything the shared view shows. They 401 the moment `AUTH_MODE=oidc` is
+      on, and Chrome reports it as `ERR_BLOCKED_BY_ORB`, which is why it hides so well. Swap those over.
+- [ ] **A share link under `AUTH_MODE=oidc` has not been checked.** `?share=` is deliberately public
+      and the sign-in gate is checked *after* it, so it should be unaffected — but "should" is not
+      verified, and a viewer with no account is exactly who those links are for.
+- [ ] **There is no way to delete a company.** The admin screen can create one, and the API has
+      `POST /admin/tenants`, but nothing removes one — which is why the test workspace from verifying
+      that screen had to be deleted with a script against `db.sqlite` by hand. Add
+      `DELETE /admin/tenants/:id` (refusing while it still owns designs or templates, or taking them
+      with it) and a button next to each one.
+- [ ] **The admin screen stops at templates and companies.** The API already has the rest of the
+      admin surface, with no UI on it yet: invites and members (`GET|POST /admin/invites`,
+      `GET /admin/members`) are how a *person* is given a workspace, the brand kit is `PUT /brand`,
+      assets are `POST|DELETE /admin/assets`, and `GET /admin/audit` is the whole audit trail. Those
+      four are the obvious next tabs once someone needs them.
 
 Nothing else is open. The feature backlog is empty, and the smaller debts, the accepted trade-offs
 and the deliberate non-goals all have their record in `App_Overview.md`.
