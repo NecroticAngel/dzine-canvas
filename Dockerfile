@@ -13,7 +13,9 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --legacy-peer-deps && npm cache clean --force
 COPY api ./api
+COPY scripts/backup-storage.mjs ./scripts/backup-storage.mjs
 COPY --from=build /app/dist ./dist
+RUN mkdir -p /data && chown node:node /data
 USER node
 EXPOSE 4201
 CMD ["node", "api/server.js"]

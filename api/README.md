@@ -7,7 +7,7 @@ Local backend for **templates**, **per-user designs**, and **uploads**.
 
 ## Start
 
-From `canva-clone/`:
+From the repository root:
 
 ```bash
 npm run api
@@ -27,13 +27,13 @@ Copy `.env.example` → `.env` (or set in the process manager).
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `API_ENDPOINT` | — | Frontend base URL, e.g. `http://127.0.0.1:4201` |
+| `API_ENDPOINT` | empty | Optional build-time override; empty uses the same-origin `/api` mount |
 
 ### API listen
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `HOST` | `127.0.0.1` | Bind address |
+| `HOST` | `0.0.0.0` | Bind address |
 | `PORT` | `4201` | Bind port |
 
 ### Storage layout
@@ -62,7 +62,7 @@ api/public/                       static thumbs (NECROZINE_PUBLIC_DIR)
 | `FONT_API_KEY` | unset | Optional; `GET /fonts` prefers Google's catalogue when set |
 | `NECROZINE_DEFAULT_USER_ID` | `default` | Tenant used before identity resolves |
 
-Absolute paths win. Relative paths resolve from the `canva-clone/` project root.
+Absolute paths win. Relative paths resolve from the repository root.
 
 > **`DESIGNS_DIR` and `UPLOADS_DIR` must contain `{userId}`.** Without it every tenant
 > resolves to the same directory, so tenants would read and overwrite each other's files. The
@@ -80,16 +80,16 @@ NECROZINE_PUBLIC_DIR=/var/necrozine/shared/public
 NECROZINE_DEFAULT_USER_ID=default
 ```
 
-### Scoping a request to a user
+### Authentication and tenant scope
 
-Send either:
+Tenant scope comes from the authenticated member in SQLite, never `X-User-Id`
+or a query parameter. Local development uses a fixed development identity.
+Production verifies the ingress-forwarded OIDC token; configure it as described
+in [the runtime guide](../README.md#container-and-kubernetes-runtime).
 
-- Header: `X-User-Id: alice`
-- Query: `?userId=alice`
-
-If omitted, `NECROZINE_DEFAULT_USER_ID` is used. Paths are sanitized to `[A-Za-z0-9._-]`.
-
-`GET /health` returns the resolved paths for the current user — useful when wiring deploy.
+All API endpoints below are relative to `/api` (or `${BASE_PATH}/api`).
+`GET /health` is an unprefixed process probe. `/api/health` exposes detailed
+storage information only to authenticated administrators.
 
 ## Endpoints
 
@@ -115,17 +115,15 @@ If omitted, `NECROZINE_DEFAULT_USER_ID` is used. Paths are sanitized to `[A-Za-z
 ### Upload example
 
 ```bash
-curl -X POST http://127.0.0.1:4201/uploads ^
-  -H "X-User-Id: alice" ^
+curl -X POST http://127.0.0.1:4201/api/uploads ^
   -F "file=@./photo.png"
 ```
 
 ### Design save example
 
 ```bash
-curl -X PUT http://127.0.0.1:4201/designs/my-poster ^
+curl -X PUT http://127.0.0.1:4201/api/designs/my-poster ^
   -H "Content-Type: application/json" ^
-  -H "X-User-Id: alice" ^
   -d "{\"name\":\"My Poster\",\"pages\":[...]}"
 ```
 
@@ -172,7 +170,7 @@ curl -X PUT http://127.0.0.1:4201/designs/my-poster ^
 ### Option C — POST
 
 ```bash
-curl -X POST http://127.0.0.1:4201/templates ^
+curl -X POST http://127.0.0.1:4201/api/templates ^
   -H "Content-Type: application/json" ^
   -d "{\"name\":\"From API\",\"img\":\"/thumbs/blank-white.svg\",\"elements\":{...}}"
 ```
@@ -196,5 +194,30 @@ Writes blank + starter templates under the default templates dir.
 ## Tips
 
 - Uploads in the editor sidebar now hit `POST /uploads` and survive refresh (per user).
-- Designs can live on disk via `/designs` (browser library still uses localStorage until wired to these endpoints).
+- Designs are saved through `/api/designs`, with metadata in SQLite and page JSON on persistent storage.
 - If sidebars are empty, confirm the API is running, env paths exist, and `API_ENDPOINT` matches, then hard-refresh.
+
+## Hosting instance access
+
+For a fresh dedicated Hosting instance, set `AUTH_MODE=oidc`, `OIDC_ISSUER`,
+`OIDC_JWKS_URL`, `OIDC_AUDIENCE`, `AUTH_INSTANCE_ID` (the stable Hosting workload UUID)
+and `AUTH_INSTANCE_GROUP` (that instance's exact full group path).
+
+Every request must carry the gateway's access token plus `X-Hosting-User-Id` and
+`X-Hosting-User-Issuer` matching its verified claims. Canvas checks the instance
+audience group on every request, including existing members. The gateway must
+strip browser-supplied identity headers and the network must deny gateway bypass.
+
+Allowed users join one shared workspace as ordinary members on their first request;
+no separate Canvas invitation or role selection is needed. `AUTH_ADMIN_EMAILS` does
+not promote users in this mode. Username and display name come from verified token
+claims and are returned by `/api/me`. Missing optional profile fields remain empty.
+Names and email changes never change ownership. Other authentication modes retain
+their existing invitation flow.
+
+Use this mode only on a fresh instance until an existing-workspace migration has
+been reviewed. Changing the instance ID is not a workspace migration. Revocation
+of already-issued tokens still depends on the gateway's bounded session checks.
+
+Run the focused proof with `node --test api/identity.test.js` and the normal
+repository checks with `just check`.

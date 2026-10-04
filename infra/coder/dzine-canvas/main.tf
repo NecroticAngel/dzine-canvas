@@ -22,11 +22,16 @@ module "workspace" {
   default_repo       = "git@github.com:NecroticAngel/dzine-canvas.git"
   repo_description   = "Git repository URL to clone (SSH or HTTPS)"
   image              = "ghcr.io/haakco/coder-workspace-playwright:latest"
-  bootstrap_commands = ["npm ci"]
+  bootstrap_commands = ["npm ci --legacy-peer-deps"]
   dev_apps = {
-    editor = { display_name = "Dzine Editor", port = 4200 }
-    api    = { display_name = "Templates API", port = 4201 }
+    editor = { display_name = "Dzine Editor", port = 4200, icon = local.project_icon }
+    api    = { display_name = "Templates API", port = 4201, icon = "/emojis/1f50c.png" }
   }
   symlink_path              = "/home/coder/Dev/Jo/dzine-canvas"
   rewrite_https_repo_to_ssh = true
+}
+
+locals {
+  # Same project logo as the template card; hosted by the Coder Terraform root.
+  project_icon = "/project-icons/dzine-canvas.png"
 }
